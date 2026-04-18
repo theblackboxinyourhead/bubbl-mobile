@@ -56,6 +56,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       apiBaseUrl,
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+      deepLinkScheme: target.scheme,
+      deepLinkHosts: target.hosts,
     },
     plugins: [
       [
@@ -95,7 +97,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       intentFilters: target.hosts.map((host) => ({
         action: 'VIEW',
         autoVerify: true,
-        data: [{ scheme: 'https', host, pathPrefix: '/screening/verify' }],
+        data: [
+          { scheme: 'https', host, pathPrefix: '/screening/verify' },
+          { scheme: 'https', host, pathPrefix: '/auth/callback' },
+          { scheme: 'https', host, pathPrefix: '/auth/password-flows' },
+        ],
         category: ['BROWSABLE', 'DEFAULT'],
       })),
       ...(allowInsecureHttp ? { usesCleartextTraffic: true } : {}),
