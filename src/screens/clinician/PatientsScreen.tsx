@@ -10,6 +10,19 @@ type Props = ClinicianTabScreenProps<'Patients'>
 
 type SortMode = 'name-asc' | 'name-desc' | 'recent'
 
+function rosterScreeningTone(screeningStatus: string): 'attention' | 'ready' | 'neutral' {
+  const s = screeningStatus.trim().toLowerCase()
+  if (s.includes('complete') || s.includes('ready')) return 'ready'
+  if (s.includes('pending') || s.includes('sent') || s.includes('review')) return 'attention'
+  return 'neutral'
+}
+
+function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
+  if (tone === 'ready') return luminaStyles.statusDotReady
+  if (tone === 'attention') return luminaStyles.statusDotAttention
+  return luminaStyles.statusDotNeutral
+}
+
 export function PatientsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -123,28 +136,36 @@ export function PatientsScreen({ navigation }: Props) {
           {filteredRows.map((row) => (
             <View key={row.id} style={styles.rosterRow}>
               <Pressable
-                style={styles.rosterMain}
+                style={({ pressed }) => [styles.rosterMain, pressed && luminaStyles.pressedRow]}
                 onPress={() => navigation.navigate('PatientProfile', { patientId: row.id })}
               >
-                <Text style={styles.rowTitle}>{row.fullName}</Text>
-                <Text style={luminaStyles.metaText}>
-                  {row.phone ?? 'No phone'} · {row.email ?? 'No email'}
-                </Text>
-                <Text style={luminaStyles.metaText}>
-                  Screening: {row.screeningStatus} · Last request:{' '}
-                  {row.lastScreeningRequest ? new Date(row.lastScreeningRequest).toLocaleString() : 'None'}
-                </Text>
+                <View style={styles.rosterMainInner}>
+                  <View style={[luminaStyles.statusDot, toneDotStyle(rosterScreeningTone(row.screeningStatus))]} />
+                  <View style={styles.rosterTextCol}>
+                    <Text style={luminaStyles.rowTitleStrong}>{row.fullName}</Text>
+                    <Text style={luminaStyles.metaText}>
+                      {row.phone ?? 'No phone'} · {row.email ?? 'No email'}
+                    </Text>
+                    <Text style={luminaStyles.metaText}>
+                      Screening: {row.screeningStatus} · Last request:{' '}
+                      {row.lastScreeningRequest ? new Date(row.lastScreeningRequest).toLocaleString() : 'None'}
+                    </Text>
+                  </View>
+                </View>
               </Pressable>
               <View style={styles.rosterAction}>
                 <Pressable
-                  style={[luminaStyles.secondaryButton, styles.sendScreeningButton]}
+                  style={({ pressed }) => [
+                    luminaStyles.actionTintedPill,
+                    pressed && luminaStyles.pressedButton,
+                  ]}
                   onPress={() => void sendScreening(row.id)}
                   disabled={busyInviteId === row.id}
                 >
                   {busyInviteId === row.id ? (
                     <ActivityIndicator color={lumina.primary} />
                   ) : (
-                    <Text style={[luminaStyles.secondaryButtonText, styles.sendScreeningText]}>Send screening</Text>
+                    <Text style={luminaStyles.actionTintedButtonText}>Send screening</Text>
                   )}
                 </Pressable>
               </View>
@@ -196,6 +217,13 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     paddingHorizontal: 10,
+  },
+  rosterMainInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  rosterTextCol: {
+    flex: 1,
     gap: 3,
   },
   rosterAction: {
@@ -206,22 +234,5 @@ const styles = StyleSheet.create({
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: lumina.outlineVariant,
     minWidth: 118,
-  },
-  sendScreeningButton: {
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    backgroundColor: lumina.surfaceContainer,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: lumina.outlineVariant,
-  },
-  sendScreeningText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: lumina.onSurfaceVariant,
-  },
-  rowTitle: {
-    color: lumina.onSurface,
-    fontSize: 15,
-    fontWeight: '700',
   },
 })

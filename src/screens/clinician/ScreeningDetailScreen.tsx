@@ -650,10 +650,30 @@ export function ScreeningDetailScreen({ route }: Props) {
                 Visit summary: {asString(detail.visitSummary) ?? 'No visit summary available.'}
               </Text>
               <Text style={styles.cardBody}>
-                Preliminary assessment: {asString((detail.preliminaryAssessment as { summary?: unknown } | null)?.summary) ?? 'No preliminary assessment summary.'}
+                Preliminary assessment:{' '}
+                {(() => {
+                  const prelim = asString((detail.preliminaryAssessment as { summary?: unknown } | null)?.summary)
+                  return prelim ? (
+                    <Text style={styles.aiGeneratedInline}>{prelim}</Text>
+                  ) : (
+                    'No preliminary assessment summary.'
+                  )
+                })()}
               </Text>
               <Text style={styles.cardBody}>
-                Insight timeline: {summarizeUnknownList((detail.scribeRecordClinicalInsights as { timeline?: unknown } | null)?.timeline, ['label', 'summary'], 'No insights available.')}
+                Insight timeline:{' '}
+                {(() => {
+                  const insightLine = summarizeUnknownList(
+                    (detail.scribeRecordClinicalInsights as { timeline?: unknown } | null)?.timeline,
+                    ['label', 'summary'],
+                    'No insights available.'
+                  )
+                  return insightLine !== 'No insights available.' ? (
+                    <Text style={styles.aiGeneratedInline}>{insightLine}</Text>
+                  ) : (
+                    insightLine
+                  )
+                })()}
               </Text>
             </View>
           </>
@@ -668,36 +688,69 @@ export function ScreeningDetailScreen({ route }: Props) {
             <Text style={styles.cardBody}>Insights timeline rows: {timelineCount}</Text>
 
             {canScribe ? (
-              <View style={styles.row}>
-                <Pressable style={luminaStyles.primaryButton} onPress={onStart} disabled={scribe === 'starting' || scribe === 'recording'}>
+              <View style={styles.scribeControlStack}>
+                <Pressable
+                  style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+                  onPress={onStart}
+                  disabled={scribe === 'starting' || scribe === 'recording'}
+                >
                   {scribe === 'starting' ? <ActivityIndicator color={lumina.onPrimary} /> : <Text style={luminaStyles.primaryButtonText}>Start scribe</Text>}
                 </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void onPauseLocal()}>
-                  <Text style={luminaStyles.secondaryButtonText}>Pause local</Text>
-                </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void onResumeLocal()}>
-                  <Text style={luminaStyles.secondaryButtonText}>Resume</Text>
-                </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void onStop('save')}>
-                  <Text style={luminaStyles.secondaryButtonText}>Stop and save</Text>
-                </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void onStop('discard')}>
-                  <Text style={luminaStyles.secondaryButtonText}>Discard</Text>
-                </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void runGenerateSummary()}>
-                  <Text style={luminaStyles.secondaryButtonText}>Generate summary</Text>
-                </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void runGenerateInsights()}>
-                  <Text style={luminaStyles.secondaryButtonText}>Generate insights</Text>
+                <Pressable
+                  style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+                  onPress={() => void onPauseLocal()}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Pause local</Text>
                 </Pressable>
                 <Pressable
-                  style={luminaStyles.secondaryButton}
+                  style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+                  onPress={() => void onResumeLocal()}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Resume</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+                  onPress={() => void onStop('save')}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Stop and save</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+                  onPress={() => void onStop('discard')}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Discard</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    luminaStyles.actionTintedButton,
+                    styles.scribeClusterSpacer,
+                    pressed && luminaStyles.pressedButton,
+                  ]}
+                  onPress={() => void runGenerateSummary()}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Generate summary</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+                  onPress={() => void runGenerateInsights()}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Generate insights</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    luminaStyles.actionTintedButton,
+                    styles.scribeClusterSpacer,
+                    pressed && luminaStyles.pressedButton,
+                  ]}
                   onPress={() => void recoverScribeTranscript(screeningId, sessionId ? { sessionId } : {})}
                 >
-                  <Text style={luminaStyles.secondaryButtonText}>Recover transcript</Text>
+                  <Text style={luminaStyles.actionTintedButtonText}>Recover transcript</Text>
                 </Pressable>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => void hydrate()}>
-                  <Text style={luminaStyles.secondaryButtonText}>Refresh session data</Text>
+                <Pressable
+                  style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+                  onPress={() => void hydrate()}
+                >
+                  <Text style={luminaStyles.actionTintedButtonText}>Refresh session data</Text>
                 </Pressable>
               </View>
             ) : (
@@ -710,9 +763,10 @@ export function ScreeningDetailScreen({ route }: Props) {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Visit notes & finalization</Text>
             <Pressable
-              style={[
+              style={({ pressed }) => [
                 luminaStyles.primaryButton,
                 visitStatus.status === 'finalized' || !visitStatus.canFinalize ? styles.disabled : undefined,
+                pressed && luminaStyles.pressedButton,
               ]}
               onPress={() => void runVisitFinalize()}
               disabled={visitStatus.status === 'finalized' || !visitStatus.canFinalize}
@@ -731,8 +785,11 @@ export function ScreeningDetailScreen({ route }: Props) {
               placeholder="Add clinician note"
               placeholderTextColor={lumina.onSurfaceVariant}
             />
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => void runVisitNoteSave()}>
-              <Text style={luminaStyles.secondaryButtonText}>Save note</Text>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void runVisitNoteSave()}
+            >
+              <Text style={luminaStyles.actionTintedButtonText}>Save note</Text>
             </Pressable>
 
             <Text style={styles.fieldLabel}>Addenda (post-finalize)</Text>
@@ -744,11 +801,17 @@ export function ScreeningDetailScreen({ route }: Props) {
               placeholder="Add correction or addendum"
               placeholderTextColor={lumina.onSurfaceVariant}
             />
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => void runCreateAddendum()}>
-              <Text style={luminaStyles.secondaryButtonText}>Add addendum</Text>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void runCreateAddendum()}
+            >
+              <Text style={luminaStyles.actionTintedButtonText}>Add addendum</Text>
             </Pressable>
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => void runLoadAddenda()}>
-              <Text style={luminaStyles.secondaryButtonText}>Refresh addenda</Text>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void runLoadAddenda()}
+            >
+              <Text style={luminaStyles.actionTintedButtonText}>Refresh addenda</Text>
             </Pressable>
             {addenda.map((item) => (
               <View key={item.id} style={styles.row}>
@@ -765,8 +828,11 @@ export function ScreeningDetailScreen({ route }: Props) {
               placeholder={patientId ? `Default: ${patientId}` : 'Patient UUID'}
               placeholderTextColor={lumina.onSurfaceVariant}
             />
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => void runInvite()}>
-              <Text style={luminaStyles.secondaryButtonText}>Send invite</Text>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void runInvite()}
+            >
+              <Text style={luminaStyles.actionTintedButtonText}>Send invite</Text>
             </Pressable>
           </View>
         ) : null}
@@ -777,7 +843,14 @@ export function ScreeningDetailScreen({ route }: Props) {
 
 function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.tabBtn, active ? styles.tabBtnActive : undefined]} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.tabBtn,
+        active ? styles.tabBtnActive : undefined,
+        pressed && luminaStyles.pressedRow,
+      ]}
+      onPress={onPress}
+    >
       <Text style={[styles.tabText, active ? styles.tabTextActive : undefined]}>{label}</Text>
     </Pressable>
   )
@@ -865,6 +938,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: lumina.surface,
     padding: 10,
+  },
+  scribeControlStack: {
+    gap: 5,
+    borderRadius: 16,
+    backgroundColor: lumina.surface,
+    padding: 8,
+  },
+  scribeClusterSpacer: {
+    marginTop: 10,
+  },
+  aiGeneratedInline: {
+    fontStyle: 'italic',
   },
   rowTitle: {
     color: lumina.onSurface,

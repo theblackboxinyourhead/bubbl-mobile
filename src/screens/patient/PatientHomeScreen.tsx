@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
 import { fetchPatientHistory } from '@/api/patients'
@@ -139,25 +139,25 @@ export function PatientHomeScreen({ navigation }: Props) {
             <Text style={luminaStyles.sectionHeader}>Reminders</Text>
             {data.followThroughLabel && data.followThroughScreeningId ? (
               <Pressable
-                style={luminaStyles.listRowCompact}
+                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
                 onPress={() => {
                   const id = data.followThroughScreeningId
                   if (!id) return
                   navigation.navigate('PatientScreeningDetail', { screeningId: id })
                 }}
               >
-                <Text style={styles.rowPrimary}>Follow-through due</Text>
+                <Text style={luminaStyles.rowTitleStrong}>Follow-through due</Text>
                 <Text style={luminaStyles.metaText}>{data.followThroughLabel}</Text>
-                <Text style={styles.linkHint}>Open follow-through</Text>
+                <Text style={luminaStyles.metaText}>Open follow-through</Text>
               </Pressable>
             ) : data.nextWeeklyDueLabel ? (
               <Pressable
-                style={luminaStyles.listRowCompact}
+                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
                 onPress={() => navigation.navigate('CheckInStart')}
               >
-                <Text style={styles.rowPrimary}>Weekly check-in</Text>
+                <Text style={luminaStyles.rowTitleStrong}>Weekly check-in</Text>
                 <Text style={luminaStyles.metaText}>Due {data.nextWeeklyDueLabel}</Text>
-                <Text style={styles.linkHint}>Open check-in</Text>
+                <Text style={luminaStyles.metaText}>Open check-in</Text>
               </Pressable>
             ) : (
               <EmptyState
@@ -171,16 +171,16 @@ export function PatientHomeScreen({ navigation }: Props) {
             <Text style={luminaStyles.sectionHeader}>Recent screening</Text>
             {data.latestCompletedScreeningId ? (
               <Pressable
-                style={luminaStyles.listRowCompact}
+                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
                 onPress={() => {
                   const id = data.latestCompletedScreeningId
                   if (!id) return
                   navigation.navigate('PatientScreeningDetail', { screeningId: id })
                 }}
               >
-                <Text style={styles.rowPrimary}>Latest completed</Text>
+                <Text style={luminaStyles.rowTitleStrong}>Latest completed</Text>
                 <Text style={luminaStyles.metaText}>{data.latestCompletedDateLabel ?? 'Recent'}</Text>
-                <Text style={styles.linkHint}>Open latest</Text>
+                <Text style={luminaStyles.metaText}>Open latest</Text>
               </Pressable>
             ) : (
               <EmptyState title="No history yet" body="Completed screenings will appear here." />
@@ -191,17 +191,3 @@ export function PatientHomeScreen({ navigation }: Props) {
     </ScrollView>
   )
 }
-
-const styles = StyleSheet.create({
-  rowPrimary: {
-    color: lumina.onSurface,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  linkHint: {
-    color: lumina.primary,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-})

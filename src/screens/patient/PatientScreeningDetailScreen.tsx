@@ -238,7 +238,7 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
         {sections.map((section) =>
           section.lines.length > 0 ? (
             <View key={section.title} style={styles.card}>
-              <Text style={styles.cardTitle}>{section.title}</Text>
+              <Text style={luminaStyles.rowTitleStrong}>{section.title}</Text>
               {section.lines.map((line, index) => (
                 <Text key={`${section.title}-${index}`} style={styles.cardBody}>
                   {line}
@@ -251,20 +251,29 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
         )}
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Follow-through reminder</Text>
+          <Text style={luminaStyles.rowTitleStrong}>Follow-through reminder</Text>
           {!notificationPermissionGranted ? (
             <View style={styles.permissionRow}>
               <Text style={styles.cardBody}>
                 Notifications are disabled. Enable notifications in OS settings to schedule reminders.
               </Text>
-              <Pressable style={luminaStyles.secondaryButton} onPress={() => Linking.openSettings()}>
-                <Text style={luminaStyles.secondaryButtonText}>Open settings</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  luminaStyles.actionTintedButton,
+                  pressed && luminaStyles.pressedButton,
+                ]}
+                onPress={() => Linking.openSettings()}
+              >
+                <Text style={luminaStyles.actionTintedButtonText}>Open settings</Text>
               </Pressable>
             </View>
           ) : null}
 
           <Text style={styles.sectionLabel}>Reminder date</Text>
-          <Pressable style={luminaStyles.secondaryButton} onPress={() => setDatePickerVisible(true)}>
+          <Pressable
+            style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+            onPress={() => setDatePickerVisible(true)}
+          >
             <Text style={luminaStyles.secondaryButtonText}>
               {reminderAt.toLocaleDateString()}
             </Text>
@@ -279,7 +288,10 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
           ) : null}
 
           <Text style={styles.sectionLabel}>Reminder time</Text>
-          <Pressable style={luminaStyles.secondaryButton} onPress={() => setTimePickerVisible(true)}>
+          <Pressable
+            style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+            onPress={() => setTimePickerVisible(true)}
+          >
             <Text style={luminaStyles.secondaryButtonText}>
               {formatTime(reminderAt.getHours(), reminderAt.getMinutes())}
             </Text>
@@ -296,7 +308,11 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
           <Text style={styles.cardBody}>Selected: {reminderAt.toLocaleString()}</Text>
 
           <Pressable
-            style={[luminaStyles.primaryButton, !notificationPermissionGranted ? styles.disabled : undefined]}
+            style={({ pressed }) => [
+              luminaStyles.primaryButton,
+              !notificationPermissionGranted ? styles.disabled : undefined,
+              pressed && luminaStyles.pressedButton,
+            ]}
             onPress={() => void scheduleReminder()}
             disabled={!notificationPermissionGranted}
           >
@@ -306,10 +322,16 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Share</Text>
+          <Text style={luminaStyles.rowTitleStrong}>Share</Text>
           <Text style={styles.cardBody}>Share this screening summary through the existing share flow.</Text>
-          <Pressable style={luminaStyles.secondaryButton} onPress={() => navigation.navigate('Share', { screeningId })}>
-            <Text style={luminaStyles.secondaryButtonText}>Open share options</Text>
+          <Pressable
+            style={({ pressed }) => [
+              luminaStyles.actionTintedButton,
+              pressed && luminaStyles.pressedButton,
+            ]}
+            onPress={() => navigation.navigate('Share', { screeningId })}
+          >
+            <Text style={luminaStyles.actionTintedButtonText}>Open share options</Text>
           </Pressable>
         </View>
       </View>
@@ -344,11 +366,6 @@ const styles = StyleSheet.create({
     backgroundColor: lumina.surfaceLowest,
     padding: 14,
     gap: 8,
-  },
-  cardTitle: {
-    color: lumina.onSurface,
-    fontSize: 18,
-    fontWeight: '700',
   },
   cardBody: {
     color: lumina.onSurfaceVariant,

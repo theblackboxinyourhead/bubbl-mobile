@@ -17,6 +17,9 @@ export const lumina = {
   outlineVariant: '#adb2bb',
   error: '#ac3434',
   onPrimary: '#ffffff',
+  statusDotAttention: '#F59E0B',
+  statusDotReady: '#006B66',
+  statusDotNeutral: '#adb2bb',
 }
 
 export const luminaStyles = StyleSheet.create({
@@ -57,6 +60,59 @@ export const luminaStyles = StyleSheet.create({
     color: lumina.onSurfaceVariant,
     fontSize: 12,
     lineHeight: 16,
+  },
+  rowTitleStrong: {
+    color: lumina.onSurface,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  rowSubdued: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  statusDotAttention: {
+    backgroundColor: lumina.statusDotAttention,
+  },
+  statusDotReady: {
+    backgroundColor: lumina.statusDotReady,
+  },
+  statusDotNeutral: {
+    backgroundColor: lumina.statusDotNeutral,
+  },
+  actionTintedButton: {
+    borderRadius: 999,
+    backgroundColor: lumina.primaryContainer,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionTintedButtonText: {
+    color: lumina.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  actionTintedPill: {
+    borderRadius: 999,
+    backgroundColor: lumina.primaryContainer,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressedRow: {
+    backgroundColor: lumina.surfaceLow,
+  },
+  pressedButton: {
+    opacity: 0.85,
   },
   stage: {
     borderRadius: 28,

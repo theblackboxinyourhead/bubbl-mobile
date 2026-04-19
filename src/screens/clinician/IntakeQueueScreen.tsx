@@ -24,6 +24,19 @@ function normalize(value: string): string {
   return value.trim().toLowerCase()
 }
 
+function queueRowTone(status: string): 'attention' | 'ready' | 'neutral' {
+  const s = normalize(status)
+  if (s === 'completed') return 'ready'
+  if (s === 'sent' || s === 'in review') return 'attention'
+  return 'neutral'
+}
+
+function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
+  if (tone === 'ready') return luminaStyles.statusDotReady
+  if (tone === 'attention') return luminaStyles.statusDotAttention
+  return luminaStyles.statusDotNeutral
+}
+
 export function IntakeQueueScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -116,18 +129,33 @@ export function IntakeQueueScreen({ navigation }: Props) {
         <View style={styles.queueList}>
           {filteredRows.map((row) => (
             <View key={row.id} style={styles.queueRow}>
-              <Pressable style={styles.queueRowMain} onPress={() => openSummary(row.id)}>
-                <Text style={styles.rowTitle}>{row.patientName}</Text>
-                <Text style={luminaStyles.metaText}>
-                  {row.status} · {formatSentAt(row.sentAt)}
-                </Text>
-                <Text style={luminaStyles.metaText} numberOfLines={1}>
-                  {row.screeningType ?? 'Unknown'} · Scribe {row.scribeStatus ?? '—'} · Visit {row.visitStatus ?? '—'}
-                  {row.patientPhone ? ` · ${row.patientPhone}` : ''}
-                </Text>
+              <Pressable
+                style={({ pressed }) => [styles.queueRowMain, pressed && luminaStyles.pressedRow]}
+                onPress={() => openSummary(row.id)}
+              >
+                <View style={styles.queueRowInner}>
+                  <View style={[luminaStyles.statusDot, toneDotStyle(queueRowTone(row.status))]} />
+                  <View style={styles.queueTextCol}>
+                    <Text style={luminaStyles.rowTitleStrong}>{row.patientName}</Text>
+                    <Text style={luminaStyles.metaText}>
+                      {row.status} · {formatSentAt(row.sentAt)}
+                    </Text>
+                    <Text style={luminaStyles.metaText} numberOfLines={1}>
+                      {row.screeningType ?? 'Unknown'} · Scribe {row.scribeStatus ?? '—'} · Visit {row.visitStatus ?? '—'}
+                      {row.patientPhone ? ` · ${row.patientPhone}` : ''}
+                    </Text>
+                  </View>
+                </View>
               </Pressable>
-              <Pressable style={styles.scribeCell} onPress={() => openScribe(row.id)}>
-                <Text style={styles.scribeLabel}>Scribe</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  luminaStyles.actionTintedPill,
+                  styles.scribeCell,
+                  pressed && luminaStyles.pressedButton,
+                ]}
+                onPress={() => openScribe(row.id)}
+              >
+                <Text style={luminaStyles.actionTintedButtonText}>Scribe</Text>
               </Pressable>
             </View>
           ))}
@@ -174,23 +202,19 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     paddingHorizontal: 10,
+  },
+  queueRowInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  queueTextCol: {
+    flex: 1,
     gap: 3,
   },
   scribeCell: {
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: lumina.outlineVariant,
-    backgroundColor: 'transparent',
-  },
-  rowTitle: {
-    color: lumina.onSurface,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  scribeLabel: {
-    color: lumina.primary,
-    fontSize: 13,
-    fontWeight: '700',
+    alignSelf: 'center',
+    marginRight: 8,
+    paddingHorizontal: 4,
   },
 })

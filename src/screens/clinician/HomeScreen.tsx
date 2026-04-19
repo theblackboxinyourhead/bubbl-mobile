@@ -38,6 +38,38 @@ type ActionRow = {
   action?: string
   screeningId?: string
   patientId?: string
+  tone?: 'attention' | 'ready' | 'neutral'
+}
+
+function needsAttentionTone(severity: NeedsAttentionItem['severity']): ActionRow['tone'] {
+  if (severity === 'follow-up') return 'neutral'
+  return 'attention'
+}
+
+function visitReadinessTone(bucket: VisitReadinessItem['readinessBucket']): ActionRow['tone'] {
+  if (bucket === 'ready') return 'ready'
+  return 'attention'
+}
+
+function activityTone(item: ActivityItem): ActionRow['tone'] {
+  const hay = `${item.eventType} ${item.subtitle ?? ''}`.toLowerCase()
+  if (hay.includes('complete') || hay.includes('final')) return 'ready'
+  if (
+    hay.includes('pending') ||
+    hay.includes('sent') ||
+    hay.includes('review') ||
+    hay.includes('urgent') ||
+    hay.includes('attention')
+  ) {
+    return 'attention'
+  }
+  return 'neutral'
+}
+
+function toneDotStyle(tone: ActionRow['tone'] | undefined) {
+  if (tone === 'ready') return luminaStyles.statusDotReady
+  if (tone === 'attention') return luminaStyles.statusDotAttention
+  return luminaStyles.statusDotNeutral
 }
 
 const TOTAL_ROW_LIMIT = 8
@@ -170,6 +202,7 @@ export function HomeScreen({ navigation, route }: Props) {
       action: item.cta?.action,
       screeningId: item.screeningId,
       patientId: item.patientId,
+      tone: needsAttentionTone(item.severity),
     }))
 
   const visitReadinessRowsAll: ActionRow[] = visitReadiness
@@ -181,6 +214,7 @@ export function HomeScreen({ navigation, route }: Props) {
       action: item.screeningId ? 'open_screening' : item.bubblPatientId ? 'open_patient' : undefined,
       screeningId: item.screeningId,
       patientId: item.bubblPatientId,
+      tone: visitReadinessTone(item.readinessBucket),
     }))
 
   const recentActivityRowsAll: ActionRow[] = recentActivity
@@ -192,6 +226,7 @@ export function HomeScreen({ navigation, route }: Props) {
       action: item.cta?.action,
       screeningId: item.screeningId,
       patientId: item.patientId,
+      tone: activityTone(item),
     }))
 
   const needsAttentionRows = needsAttentionRowsAll.slice(0, NEEDS_ATTENTION_ROW_LIMIT)
@@ -225,15 +260,15 @@ export function HomeScreen({ navigation, route }: Props) {
         <View style={styles.metricStrip}>
           <View style={styles.metricCell}>
             <Text style={styles.metricValue}>{needsAttentionRowsAll.length}</Text>
-            <Text style={styles.metricLabel}>Needs attention</Text>
+            <Text style={[luminaStyles.metaText, styles.metricLabel]}>Needs attention</Text>
           </View>
           <View style={styles.metricCell}>
             <Text style={styles.metricValue}>{visitReadinessRowsAll.length}</Text>
-            <Text style={styles.metricLabel}>Ready visits</Text>
+            <Text style={[luminaStyles.metaText, styles.metricLabel]}>Ready visits</Text>
           </View>
           <View style={styles.metricCell}>
             <Text style={styles.metricValue}>{recentActivityRowsAll.length}</Text>
-            <Text style={styles.metricLabel}>Recent activity</Text>
+            <Text style={[luminaStyles.metaText, styles.metricLabel]}>Recent activity</Text>
           </View>
         </View>
       ) : null}
@@ -296,7 +331,7 @@ function Section({
         return (
           <Pressable
             key={row.id}
-            style={luminaStyles.listRowCompact}
+            style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
             disabled={!canOpen}
             onPress={() => {
               if (!canOpen) return
@@ -307,8 +342,13 @@ function Section({
               })
             }}
           >
-            <Text style={styles.rowTitle}>{row.title}</Text>
-            <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
+            <View style={styles.rowInner}>
+              <View style={[luminaStyles.statusDot, toneDotStyle(row.tone)]} />
+              <View style={styles.rowTextCol}>
+                <Text style={luminaStyles.rowTitleStrong}>{row.title}</Text>
+                <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
+              </View>
+            </View>
           </Pressable>
         )
       })}
@@ -345,19 +385,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   metricLabel: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 10,
-    fontWeight: '600',
     marginTop: 2,
     textAlign: 'center',
-  },
-  rowTitle: {
-    color: lumina.onSurface,
-    fontSize: 15,
-    fontWeight: '700',
   },
   visitReadinessFocused: {
     borderLeftWidth: 3,
     borderLeftColor: lumina.primary,
+  },
+  rowInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  rowTextCol: {
+    flex: 1,
+    gap: 3,
   },
 })

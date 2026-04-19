@@ -63,6 +63,28 @@ function formatWhen(value: string | null): string {
   return date.toLocaleString()
 }
 
+function visitRowTone(screening: ClinicianPatientProfileScreening): 'attention' | 'ready' | 'neutral' {
+  const status = screening.status.trim().toLowerCase()
+  const scribe = (screening.scribeStatus ?? '').trim().toLowerCase()
+  if (status === 'completed' || scribe.includes('complete') || scribe.includes('saved')) return 'ready'
+  if (
+    scribe.includes('record') ||
+    scribe.includes('active') ||
+    status.includes('review') ||
+    status === 'sent' ||
+    status === 'pending'
+  ) {
+    return 'attention'
+  }
+  return 'neutral'
+}
+
+function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
+  if (tone === 'ready') return luminaStyles.statusDotReady
+  if (tone === 'attention') return luminaStyles.statusDotAttention
+  return luminaStyles.statusDotNeutral
+}
+
 export function PatientProfileScreen({ route, navigation }: Props) {
   const { patientId } = route.params
   const [loading, setLoading] = useState(true)
@@ -194,13 +216,21 @@ export function PatientProfileScreen({ route, navigation }: Props) {
                 ) : (
                   visitRows.map((screening) => (
                     <View key={`visit-${screening.id}`} style={styles.section}>
-                      <Text style={styles.sectionTitle}>{formatWhen(screening.completedAt ?? screening.startedAt)}</Text>
+                      <View style={styles.visitTitleRow}>
+                        <View style={[luminaStyles.statusDot, toneDotStyle(visitRowTone(screening))]} />
+                        <Text style={luminaStyles.rowTitleStrong}>
+                          {formatWhen(screening.completedAt ?? screening.startedAt)}
+                        </Text>
+                      </View>
                       <Text style={styles.cardBody}>Scribe status: {screening.scribeStatus ?? 'Not started'}</Text>
-                      <Text style={styles.cardBody}>
+                      <Text style={styles.cardBody} numberOfLines={2}>
                         Visit summary: {screening.visitSummary ? screening.visitSummary : 'No visit summary yet.'}
                       </Text>
                       <Pressable
-                        style={luminaStyles.secondaryButton}
+                        style={({ pressed }) => [
+                          luminaStyles.primaryButton,
+                          pressed && luminaStyles.pressedButton,
+                        ]}
                         onPress={() =>
                           navigation.navigate('ClinicianScreeningDetail', {
                             screeningId: screening.id,
@@ -208,7 +238,7 @@ export function PatientProfileScreen({ route, navigation }: Props) {
                           })
                         }
                       >
-                        <Text style={luminaStyles.secondaryButtonText}>Open visit workspace</Text>
+                        <Text style={luminaStyles.primaryButtonText}>Open visit workspace</Text>
                       </Pressable>
                     </View>
                   ))
@@ -305,6 +335,10 @@ const styles = StyleSheet.create({
     backgroundColor: lumina.surface,
     padding: 10,
     gap: 6,
+  },
+  visitTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sectionTitle: {
     color: lumina.onSurface,

@@ -47,6 +47,19 @@ function summarizeSymptoms(symptomsData: unknown): string {
   return 'Symptoms summary unavailable.'
 }
 
+function historyTone(status: string): 'attention' | 'ready' | 'neutral' {
+  const s = status.trim().toLowerCase()
+  if (s === 'completed') return 'ready'
+  if (s.includes('pending') || s.includes('sent') || s.includes('review')) return 'attention'
+  return 'neutral'
+}
+
+function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
+  if (tone === 'ready') return luminaStyles.statusDotReady
+  if (tone === 'attention') return luminaStyles.statusDotAttention
+  return luminaStyles.statusDotNeutral
+}
+
 export function TimelineScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -112,16 +125,21 @@ export function TimelineScreen({ navigation }: Props) {
           {items.map((item) => (
             <Pressable
               key={item.id}
-              style={luminaStyles.listRowCompact}
+              style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
               onPress={() => navigation.navigate('PatientScreeningDetail', { screeningId: item.id })}
             >
-              <Text style={styles.rowDate}>{new Date(item.createdAt).toLocaleString()}</Text>
-              <Text style={luminaStyles.metaText}>
-                {item.status} · {item.clinicianName ?? 'Clinician not listed'}
-              </Text>
-              <Text style={styles.rowSymptoms} numberOfLines={3}>
-                {item.symptomsSummary}
-              </Text>
+              <View style={styles.rowInner}>
+                <View style={[luminaStyles.statusDot, toneDotStyle(historyTone(item.status))]} />
+                <View style={styles.rowTextCol}>
+                  <Text style={luminaStyles.rowTitleStrong}>{new Date(item.createdAt).toLocaleString()}</Text>
+                  <Text style={luminaStyles.metaText}>
+                    {item.status} · {item.clinicianName ?? 'Clinician not listed'}
+                  </Text>
+                  <Text style={luminaStyles.metaText} numberOfLines={3}>
+                    {item.symptomsSummary}
+                  </Text>
+                </View>
+              </View>
             </Pressable>
           ))}
         </View>
@@ -134,14 +152,12 @@ const styles = StyleSheet.create({
   timelineList: {
     gap: 10,
   },
-  rowDate: {
-    color: lumina.onSurface,
-    fontWeight: '700',
-    fontSize: 15,
+  rowInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
-  rowSymptoms: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 13,
-    lineHeight: 18,
+  rowTextCol: {
+    flex: 1,
+    gap: 3,
   },
 })
