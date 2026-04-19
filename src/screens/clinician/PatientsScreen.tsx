@@ -119,7 +119,7 @@ export function PatientsScreen({ navigation }: Props) {
       ) : null}
 
       {filteredRows.length > 0 ? (
-        <View style={luminaStyles.sectionFlat}>
+        <View style={styles.rosterList}>
           {filteredRows.map((row) => (
             <View key={row.id} style={styles.rosterRow}>
               <Pressable
@@ -157,6 +157,9 @@ export function PatientsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  rosterList: {
+    gap: 10,
+  },
   sortRow: {
     flexDirection: 'row',
     gap: 6,
@@ -197,17 +200,24 @@ const styles = StyleSheet.create({
   },
   rosterAction: {
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: lumina.surface,
-    minWidth: 132,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: lumina.outlineVariant,
+    minWidth: 118,
   },
   sendScreeningButton: {
-    paddingVertical: 9,
-    paddingHorizontal: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    backgroundColor: lumina.surfaceContainer,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: lumina.outlineVariant,
   },
   sendScreeningText: {
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '600',
+    color: lumina.onSurfaceVariant,
   },
   rowTitle: {
     color: lumina.onSurface,

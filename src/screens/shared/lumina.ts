@@ -33,12 +33,12 @@ export const luminaStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
-    gap: 12,
+    gap: 10,
   },
   sectionFlat: {
     borderRadius: 12,
     backgroundColor: lumina.surfaceContainer,
-    padding: 12,
+    padding: 10,
     gap: 8,
   },
   sectionHeader: {
@@ -49,7 +49,7 @@ export const luminaStyles = StyleSheet.create({
   listRowCompact: {
     borderRadius: 10,
     backgroundColor: lumina.surfaceLowest,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     gap: 3,
   },

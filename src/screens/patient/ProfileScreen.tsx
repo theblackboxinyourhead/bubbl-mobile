@@ -209,8 +209,6 @@ export function ProfileScreen({ onSignOut }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
-      <Text style={luminaStyles.metaText}>Identity, reminders, and account actions.</Text>
-
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {error && !data ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && data ? <ErrorState title="Refresh failed" body={error} onRetry={() => void refresh()} /> : null}
@@ -233,8 +231,11 @@ export function ProfileScreen({ onSignOut }: Props) {
             {!data.notificationPermissionGranted ? (
               <View style={styles.permissionRow}>
                 <Text style={styles.rowText}>Notifications are disabled. Enable them in OS settings first.</Text>
-                <Pressable style={luminaStyles.secondaryButton} onPress={() => Linking.openSettings()}>
-                  <Text style={luminaStyles.secondaryButtonText}>Open settings</Text>
+                <Pressable
+                  style={[luminaStyles.secondaryButton, styles.profileSecondaryButton]}
+                  onPress={() => Linking.openSettings()}
+                >
+                  <Text style={[luminaStyles.secondaryButtonText, styles.profileSecondaryButtonText]}>Open settings</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -257,11 +258,11 @@ export function ProfileScreen({ onSignOut }: Props) {
 
             <Text style={styles.sectionLabel}>Reminder time</Text>
             <Pressable
-              style={luminaStyles.secondaryButton}
+              style={[luminaStyles.secondaryButton, styles.profileSecondaryButton]}
               onPress={() => setTimePickerVisible(true)}
               disabled={!data.notificationPermissionGranted}
             >
-              <Text style={luminaStyles.secondaryButtonText}>Pick time</Text>
+              <Text style={[luminaStyles.secondaryButtonText, styles.profileSecondaryButtonText]}>Pick time</Text>
             </Pressable>
             {timePickerVisible || Platform.OS === 'ios' ? (
               <DateTimePicker
@@ -286,8 +287,14 @@ export function ProfileScreen({ onSignOut }: Props) {
             >
               <Text style={luminaStyles.primaryButtonText}>Enable weekly check-in</Text>
             </Pressable>
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => void disableWeeklyReminder()} disabled={busy !== null}>
-              <Text style={luminaStyles.secondaryButtonText}>Disable weekly check-in</Text>
+            <Pressable
+              style={[luminaStyles.secondaryButton, styles.profileSecondaryButton]}
+              onPress={() => void disableWeeklyReminder()}
+              disabled={busy !== null}
+            >
+              <Text style={[luminaStyles.secondaryButtonText, styles.profileSecondaryButtonText]}>
+                Disable weekly check-in
+              </Text>
             </Pressable>
           </View>
 
@@ -297,11 +304,13 @@ export function ProfileScreen({ onSignOut }: Props) {
               Status: {data.submittedMedicalHistory ? 'Submitted' : 'Not submitted'}
             </Text>
             <Pressable
-              style={luminaStyles.secondaryButton}
+              style={[luminaStyles.secondaryButton, styles.profileSecondaryButton]}
               onPress={() => void resetMedicalHistory()}
               disabled={busy !== null}
             >
-              <Text style={luminaStyles.secondaryButtonText}>Reset medical history</Text>
+              <Text style={[luminaStyles.secondaryButtonText, styles.profileSecondaryButtonText]}>
+                Reset medical history
+              </Text>
             </Pressable>
           </View>
 
@@ -318,6 +327,18 @@ export function ProfileScreen({ onSignOut }: Props) {
 }
 
 const styles = StyleSheet.create({
+  profileSecondaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: lumina.surfaceContainer,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: lumina.outlineVariant,
+  },
+  profileSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: lumina.onSurfaceVariant,
+  },
   dimmed: {
     opacity: 0.55,
   },

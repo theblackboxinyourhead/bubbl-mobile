@@ -99,8 +99,6 @@ export function PatientHomeScreen({ navigation }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
-      <Text style={luminaStyles.metaText}>Your next check-in and reminders.</Text>
-
       {loading ? <LoadingState label="Loading home..." /> : null}
       {error && !data ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && data ? (

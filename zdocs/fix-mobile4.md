@@ -42,7 +42,7 @@
 ## Simplest Correct Solution
 - Make React Navigation the single owner of top-level tab headers by enabling headers on the tab navigators instead of hiding them.
 - Keep the existing stack structure intact: `PatientTabs` and `ClinicianTabs` stay embedded inside the stack, stack detail screens stay stack-pushed, and only the tab navigators gain visible headers.
-- Standardize header styling in [mobile/src/navigation/RootNavigator.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/navigation/RootNavigator.tsx) so tab headers and stack detail headers share the same surface, text, and shadow treatment.
+- Standardize authenticated header styling in [mobile/src/navigation/RootNavigator.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/navigation/RootNavigator.tsx) so tab headers and authenticated stack detail headers share the same surface, text, tint, and shadow treatment through shared token values and small navigator-local option builders in that file. Do not force bottom-tab and native-stack screens through one artificial shared options shape.
 - Remove legacy top-of-screen compensation from tab content by trimming shared tab-screen top padding in [mobile/src/screens/shared/lumina.ts](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/shared/lumina.ts).
 - Remove any remaining in-body header duplication on tab screens, especially the explicit `Profile` title/subtitle in [mobile/src/screens/clinician/ClinicianProfileScreen.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/clinician/ClinicianProfileScreen.tsx) and the explanatory lead-in text that now competes with a real header on patient top-level tabs.
 - Leave detail screens on the stack header model, but trim their wrapper top padding slightly so the body starts closer to the native header and feels consistent with the tightened tab screens.
@@ -50,18 +50,28 @@
 ## Engineering Implementation Tasks
 - [ ] Task 1: Update [mobile/src/navigation/RootNavigator.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/navigation/RootNavigator.tsx) so `PatientTab.Navigator` and `ClinicianTab.Navigator` use the standard React Navigation header.
   - Remove `headerShown: false` from tab navigator `screenOptions`.
-  - Add one shared tab-header style block using existing `lumina` tokens for background, title text, tint, and shadow treatment.
+  - Add shared authenticated-header token values in this file using existing `lumina` tokens for background, title text, tint, and shadow treatment.
+  - Apply those values through small navigator-local option builders:
+    - one for bottom-tab screens
+    - one for native-stack authenticated detail screens
+  - Keep the visual treatment aligned between the two navigators, but do not try to reuse one options object across incompatible navigator option types.
+  - Keep the header compact; do not introduce large-title behavior.
   - Set explicit header titles per tab screen so tab labels and top headers stay aligned:
     - clinician: `Today`, `Screenings`, `Patients`, `Profile`
     - patient: `Home`, `History`, `Profile`
   - Keep `PatientStack.Screen name="PatientTabs"` and `ClinicianStack.Screen name="ClinicianTabs"` with `headerShown: false` so the stack does not draw a second header above the tab navigator.
-  - Add the same header styling block to `PatientStack.Navigator` and `ClinicianStack.Navigator` so detail screens keep a visually consistent native header without introducing a custom system.
+  - Reuse that same header styling block only on the authenticated stack detail screens in this file:
+    - `PatientScreeningDetail`
+    - `ClinicianScreeningDetail`
+    - `PatientProfile`
+  - Do not broaden this pass into auth/onboarding header restyling for `PatientAuthEntry`, `PatientPhoneVerification`, `InviteEntry`, `Consent`, `Intake`, `ReviewConfirm`, `Complete`, `CheckInStart`, `Share`, `ClinicianAuthEntry`, or `ClinicianCompanyRegistration`.
 
 - [ ] Task 2: Update [mobile/src/screens/shared/lumina.ts](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/shared/lumina.ts) to stop tab screens from compensating for a hidden custom header.
   - Change `luminaStyles.pageContent` from a top-padded layout to a header-backed layout:
     - keep horizontal gutters and bottom padding
     - remove the current `paddingTop: 12`
     - keep vertical rhythm through `gap`
+  - Keep this scoped to `pageContent`, which is the shared content container currently used by the authenticated tab screens.
   - Do not change `screenScrollContent` or the detail-screen `stage` / `card` primitives in this task.
   - Do not introduce a new layout abstraction unless the existing `pageContent` style cannot be reused directly; if a second style is necessary, it must be a small shared variant in this same file, not a new component.
 
@@ -69,12 +79,14 @@
   - [mobile/src/screens/clinician/ClinicianProfileScreen.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/clinician/ClinicianProfileScreen.tsx)
     - remove the in-body `Profile` title and the subtitle line
     - keep the grouped `Identity`, `Support`, and sign-out content intact
+    - remove any now-unused local title/subtitle styles created only for the old in-body header
   - [mobile/src/screens/patient/PatientHomeScreen.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/patient/PatientHomeScreen.tsx)
     - remove the opening explanatory line so the first visible content is the actual first section
   - [mobile/src/screens/patient/TimelineScreen.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/patient/TimelineScreen.tsx)
     - remove the opening explanatory line so the header owns the page identity
   - [mobile/src/screens/patient/ProfileScreen.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/patient/ProfileScreen.tsx)
     - remove the opening explanatory line so the screen starts with the first real section
+  - Keep section titles such as `Account identity` and `Reminder settings`; this task removes only page-level faux header copy at the top of the body.
   - Keep body copy that explains a specific section, but do not leave any top-of-screen line that acts like a faux header under the new navigation header.
 
 - [ ] Task 4: Tighten top-of-screen control placement on the tabbed list screens without adding sticky behavior.
@@ -90,6 +102,8 @@
     - [mobile/src/screens/clinician/PatientProfileScreen.tsx](/Users/bartek/Desktop/Main/bubbl_main/bubbl/mobile/src/screens/clinician/PatientProfileScreen.tsx)
   - Replace uniform `padding: 16` with explicit horizontal/bottom padding and a slightly smaller top padding so content sits closer to the stack header while preserving the same body width and bottom space.
   - Keep the existing subtitle text and segmented/detail controls in those screens; they are contextual content, not top-level navigation chrome.
+  - Keep the existing screen-level stack header titles and back-button behavior already defined in `RootNavigator.tsx`; this task changes body spacing only.
+  - Do not apply this spacing change to other stack screens in this pass; keep `Share`, `CheckInStart`, auth, and intake flow wrappers untouched unless they are already using one of these exact shared styles.
 
 ## Acceptance Criteria
 - Authenticated tab screens show the standard React Navigation header on both patient and clinician tab surfaces.
@@ -100,6 +114,7 @@
 - Authenticated detail screens still open above the tabs with normal back behavior.
 - Detail screens keep stack headers and do not adopt custom top-level header chrome.
 - Detail-screen content starts closer to the header than it does today, without collapsing the existing body layout.
+- Auth and intake flow headers remain on their current behavior and are not restyled as part of this fix.
 - No `SafeAreaView`, `useSafeAreaInsets`, manual top inset calculation, or new custom header abstraction is introduced for this fix.
 
 ## Notes

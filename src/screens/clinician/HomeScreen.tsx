@@ -115,7 +115,7 @@ export function HomeScreen({ navigation, route }: Props) {
 
   const scrollVisitReadinessIntoView = useCallback(() => {
     if (!focusVisitReadiness || loading || error) return
-    const y = Math.max(0, visitReadinessSectionY.current - 12)
+    const y = Math.max(0, visitReadinessSectionY.current)
     scrollRef.current?.scrollTo({ y, animated: true })
   }, [focusVisitReadiness, loading, error])
 
@@ -148,7 +148,7 @@ export function HomeScreen({ navigation, route }: Props) {
   }, [focusVisitReadiness, loading, error, scrollVisitReadinessIntoView])
 
   const runAction = useCallback(
-    (item: { action?: string; screeningId?: string; patientId?: string }) => {
+    (item: Pick<ActionRow, 'action' | 'screeningId' | 'patientId'>) => {
       if (!isSupportedDashboardAction(item.action)) {
         return
       }
@@ -275,11 +275,11 @@ function Section({
   title: string
   emptyText: string
   rows: ActionRow[]
-  onPressRow: (item: { action?: string; screeningId?: string; patientId?: string }) => void
+  onPressRow: (item: Pick<ActionRow, 'action' | 'screeningId' | 'patientId'>) => void
   containerStyle?: StyleProp<ViewStyle>
   onLayout?: (e: LayoutChangeEvent) => void
 }) {
-  const sectionStyle = [luminaStyles.sectionFlat, containerStyle]
+  const sectionStyle: StyleProp<ViewStyle> = [styles.sectionListBlock, containerStyle]
   if (rows.length === 0) {
     return (
       <View style={sectionStyle} onLayout={onLayout}>
@@ -298,15 +298,14 @@ function Section({
             key={row.id}
             style={luminaStyles.listRowCompact}
             disabled={!canOpen}
-            onPress={() =>
-              canOpen
-                ? onPressRow({
-                    action: row.action,
-                    screeningId: row.screeningId,
-                    patientId: row.patientId,
-                  })
-                : undefined
-            }
+            onPress={() => {
+              if (!canOpen) return
+              onPressRow({
+                action: row.action,
+                screeningId: row.screeningId,
+                patientId: row.patientId,
+              })
+            }}
           >
             <Text style={styles.rowTitle}>{row.title}</Text>
             <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
@@ -318,6 +317,9 @@ function Section({
 }
 
 const styles = StyleSheet.create({
+  sectionListBlock: {
+    gap: 8,
+  },
   clinicEyebrow: {
     color: lumina.onSurfaceVariant,
     fontSize: 12,
@@ -355,6 +357,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   visitReadinessFocused: {
-    backgroundColor: lumina.surfaceHigh,
+    borderLeftWidth: 3,
+    borderLeftColor: lumina.primary,
   },
 })

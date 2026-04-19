@@ -113,7 +113,7 @@ export function IntakeQueueScreen({ navigation }: Props) {
       ) : null}
 
       {filteredRows.length > 0 ? (
-        <View style={luminaStyles.sectionFlat}>
+        <View style={styles.queueList}>
           {filteredRows.map((row) => (
             <View key={row.id} style={styles.queueRow}>
               <Pressable style={styles.queueRowMain} onPress={() => openSummary(row.id)}>
@@ -138,6 +138,9 @@ export function IntakeQueueScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  queueList: {
+    gap: 10,
+  },
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -175,8 +178,10 @@ const styles = StyleSheet.create({
   },
   scribeCell: {
     justifyContent: 'center',
-    paddingHorizontal: 10,
-    backgroundColor: lumina.surface,
+    paddingHorizontal: 8,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: lumina.outlineVariant,
+    backgroundColor: 'transparent',
   },
   rowTitle: {
     color: lumina.onSurface,

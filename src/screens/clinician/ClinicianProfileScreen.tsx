@@ -52,9 +52,6 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
-      <Text style={styles.compactTitle}>Profile</Text>
-      <Text style={luminaStyles.metaText}>Sign out and basic clinic context.</Text>
-
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
 
@@ -88,11 +85,6 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
 }
 
 const styles = StyleSheet.create({
-  compactTitle: {
-    color: lumina.onSurface,
-    fontSize: 22,
-    fontWeight: '700',
-  },
   row: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,

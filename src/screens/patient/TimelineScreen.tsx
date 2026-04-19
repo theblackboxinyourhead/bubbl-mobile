@@ -97,8 +97,6 @@ export function TimelineScreen({ navigation }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
-      <Text style={luminaStyles.metaText}>Chronological screenings.</Text>
-
       {loading ? <LoadingState label="Loading history..." /> : null}
       {error && items.length === 0 ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && items.length > 0 ? (
@@ -110,7 +108,7 @@ export function TimelineScreen({ navigation }: Props) {
       ) : null}
 
       {items.length > 0 ? (
-        <View style={luminaStyles.sectionFlat}>
+        <View style={styles.timelineList}>
           {items.map((item) => (
             <Pressable
               key={item.id}
@@ -133,6 +131,9 @@ export function TimelineScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  timelineList: {
+    gap: 10,
+  },
   rowDate: {
     color: lumina.onSurface,
     fontWeight: '700',

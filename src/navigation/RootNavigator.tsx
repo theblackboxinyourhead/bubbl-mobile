@@ -1,6 +1,15 @@
-import { createBottomTabNavigator, type BottomTabScreenProps } from '@react-navigation/bottom-tabs'
-import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack'
+import {
+  createBottomTabNavigator,
+  type BottomTabNavigationOptions,
+  type BottomTabScreenProps,
+} from '@react-navigation/bottom-tabs'
+import {
+  createNativeStackNavigator,
+  type NativeStackNavigationOptions,
+  type NativeStackScreenProps,
+} from '@react-navigation/native-stack'
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native'
+import { StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { InviteEntryScreen } from '@/screens/patient/InviteEntryScreen'
 import { WebFallbackScreen } from '@/screens/patient/WebFallbackScreen'
@@ -100,6 +109,66 @@ const PatientStack = createNativeStackNavigator<PatientStackParamList>()
 const ClinicianStack = createNativeStackNavigator<ClinicianStackParamList>()
 const RootStack = createNativeStackNavigator<RootStackParamList>()
 
+const authenticatedHeaderBackground = lumina.surfaceLowest
+const authenticatedHeaderTitleColor = lumina.onSurface
+const authenticatedHeaderTintColor = lumina.primary
+const authenticatedHeaderShadowColor = lumina.outlineVariant
+const authenticatedHeaderShadowVisible = true
+const authenticatedDetailHeaderStyle = {
+  backgroundColor: authenticatedHeaderBackground,
+  shadowColor: authenticatedHeaderShadowColor,
+}
+
+function buildAuthenticatedTabHeaderOptions(): BottomTabNavigationOptions {
+  return {
+    headerStyle: {
+      backgroundColor: authenticatedHeaderBackground,
+      shadowColor: authenticatedHeaderShadowColor,
+    },
+    headerTitleStyle: {
+      color: authenticatedHeaderTitleColor,
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    headerTintColor: authenticatedHeaderTintColor,
+    headerShadowVisible: authenticatedHeaderShadowVisible,
+  }
+}
+
+function buildAuthenticatedTabBarOptions(): Pick<
+  BottomTabNavigationOptions,
+  'tabBarStyle' | 'tabBarItemStyle' | 'tabBarLabelStyle'
+> {
+  return {
+    tabBarStyle: {
+      backgroundColor: lumina.surfaceLowest,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: lumina.outlineVariant,
+    },
+    tabBarItemStyle: {
+      paddingVertical: 4,
+    },
+    tabBarLabelStyle: {
+      fontSize: 11,
+      fontWeight: '600',
+    },
+  }
+}
+
+function buildAuthenticatedDetailHeaderOptions(): NativeStackNavigationOptions {
+  return {
+    headerStyle: authenticatedDetailHeaderStyle,
+    headerTitleStyle: {
+      color: authenticatedHeaderTitleColor,
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    headerTintColor: authenticatedHeaderTintColor,
+    headerShadowVisible: authenticatedHeaderShadowVisible,
+    headerLargeTitle: false,
+  }
+}
+
 function patientTabIcon(routeName: keyof PatientTabParamList, focused: boolean): keyof typeof Ionicons.glyphMap {
   if (routeName === 'PatientHome') return focused ? 'home' : 'home-outline'
   if (routeName === 'Timeline') return focused ? 'time' : 'time-outline'
@@ -120,18 +189,26 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
   return (
     <PatientTab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false,
+        ...buildAuthenticatedTabHeaderOptions(),
+        ...buildAuthenticatedTabBarOptions(),
         tabBarActiveTintColor: lumina.primary,
         tabBarInactiveTintColor: lumina.onSurfaceVariant,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
         tabBarIcon: ({ color, size, focused }) => (
           <Ionicons name={patientTabIcon(route.name as keyof PatientTabParamList, focused)} size={size} color={color} />
         ),
       })}
     >
-      <PatientTab.Screen name="PatientHome" component={PatientHomeScreen} options={{ tabBarLabel: 'Home' }} />
-      <PatientTab.Screen name="Timeline" component={TimelineScreen} options={{ tabBarLabel: 'History' }} />
-      <PatientTab.Screen name="Profile" options={{ tabBarLabel: 'Profile' }}>
+      <PatientTab.Screen
+        name="PatientHome"
+        component={PatientHomeScreen}
+        options={{ tabBarLabel: 'Home', title: 'Home' }}
+      />
+      <PatientTab.Screen
+        name="Timeline"
+        component={TimelineScreen}
+        options={{ tabBarLabel: 'History', title: 'History' }}
+      />
+      <PatientTab.Screen name="Profile" options={{ tabBarLabel: 'Profile', title: 'Profile' }}>
         {(props) => <ProfileScreen {...props} onSignOut={onSignOut} />}
       </PatientTab.Screen>
     </PatientTab.Navigator>
@@ -142,10 +219,10 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
   return (
     <ClinicianTab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false,
+        ...buildAuthenticatedTabHeaderOptions(),
+        ...buildAuthenticatedTabBarOptions(),
         tabBarActiveTintColor: lumina.primary,
         tabBarInactiveTintColor: lumina.onSurfaceVariant,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
         tabBarIcon: ({ color, size, focused }) => (
           <Ionicons
             name={clinicianTabIcon(route.name as keyof ClinicianTabParamList, focused)}
@@ -155,10 +232,22 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
         ),
       })}
     >
-      <ClinicianTab.Screen name="ClinicianHome" component={HomeScreen} options={{ tabBarLabel: 'Today' }} />
-      <ClinicianTab.Screen name="IntakeQueue" component={IntakeQueueScreen} options={{ tabBarLabel: 'Screenings' }} />
-      <ClinicianTab.Screen name="Patients" component={PatientsScreen} options={{ tabBarLabel: 'Patients' }} />
-      <ClinicianTab.Screen name="ClinicianProfile" options={{ tabBarLabel: 'Profile' }}>
+      <ClinicianTab.Screen
+        name="ClinicianHome"
+        component={HomeScreen}
+        options={{ tabBarLabel: 'Today', title: 'Today' }}
+      />
+      <ClinicianTab.Screen
+        name="IntakeQueue"
+        component={IntakeQueueScreen}
+        options={{ tabBarLabel: 'Screenings', title: 'Screenings' }}
+      />
+      <ClinicianTab.Screen
+        name="Patients"
+        component={PatientsScreen}
+        options={{ tabBarLabel: 'Patients', title: 'Patients' }}
+      />
+      <ClinicianTab.Screen name="ClinicianProfile" options={{ tabBarLabel: 'Profile', title: 'Profile' }}>
         {(props) => <ClinicianProfileScreen {...props} onSignOut={onSignOut} />}
       </ClinicianTab.Screen>
     </ClinicianTab.Navigator>
@@ -208,7 +297,7 @@ export function PatientNavigator({
       <PatientStack.Screen
         name="PatientScreeningDetail"
         component={PatientScreeningDetailScreen}
-        options={{ title: 'Screening', headerBackTitle: 'Back' }}
+        options={{ ...buildAuthenticatedDetailHeaderOptions(), title: 'Screening', headerBackTitle: 'Back' }}
       />
       <PatientStack.Screen name="CheckInStart" component={CheckInStartScreen} />
       <PatientStack.Screen name="Share" component={ShareScreen} />
@@ -246,12 +335,12 @@ export function ClinicianNavigator({
       <ClinicianStack.Screen
         name="ClinicianScreeningDetail"
         component={ScreeningDetailScreen}
-        options={{ title: 'Screening', headerBackTitle: 'Back' }}
+        options={{ ...buildAuthenticatedDetailHeaderOptions(), title: 'Screening', headerBackTitle: 'Back' }}
       />
       <ClinicianStack.Screen
         name="PatientProfile"
         component={PatientProfileScreen}
-        options={{ title: 'Patient', headerBackTitle: 'Back' }}
+        options={{ ...buildAuthenticatedDetailHeaderOptions(), title: 'Patient', headerBackTitle: 'Back' }}
       />
     </ClinicianStack.Navigator>
   )
