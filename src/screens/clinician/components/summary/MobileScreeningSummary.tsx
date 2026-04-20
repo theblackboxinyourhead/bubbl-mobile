@@ -206,9 +206,9 @@ function medicalBadgeTone(key: MedicalGroupKey): SummaryBadgeTone {
 }
 
 function formatVisitStatusLabel(status: VisitStatusView['status']): string {
-  if (status === 'finalized') return 'Finalized (locked)'
-  if (status === 'active') return 'Active'
-  return 'Not started'
+  if (status === 'finalized') return 'finalized (locked)'
+  if (status === 'active') return 'active'
+  return 'not started'
 }
 
 function formatFinalizedAt(finalizedAt: string | null): string | null {
@@ -232,8 +232,6 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
   const assessmentSummary = asString(preliminaryAssessment?.summary)
   const overallUrgency = asUrgency(preliminaryAssessment?.overallUrgency)
   const finalizedAtLabel = formatFinalizedAt(visitStatus.finalizedAt)
-  const hasBlockers = !visitStatus.canFinalize && visitStatus.blockers.length > 0
-
   return (
     <View style={styles.stack}>
       <SummarySectionCard
@@ -242,14 +240,11 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
         icon="time-outline"
         meta={visitStatus.status === 'finalized' ? 'Locked' : undefined}
       >
-        <SummaryDataRow label="Visit" value={formatVisitStatusLabel(visitStatus.status)} emphasize inline />
-        <SummaryDataRow label="Screening status" value={asString(detail.status) ?? 'Unknown'} inline />
-        <SummaryDataRow label="Type" value={asString(detail.screeningType) ?? 'Unknown'} inline />
+        <SummaryDataRow label="Visit" value={formatVisitStatusLabel(visitStatus.status)} inline />
+        <SummaryDataRow label="Screening status" value={asString(detail.status) ?? 'unknown'} inline />
+        <SummaryDataRow label="Type" value={asString(detail.screeningType) ?? 'unknown'} inline />
         {finalizedAtLabel ? (
           <SummaryDataRow label="Finalized at" value={finalizedAtLabel} inline />
-        ) : null}
-        {hasBlockers ? (
-          <SummaryDataRow label="Finalize blockers" value={visitStatus.blockers.join(', ')} inline />
         ) : null}
       </SummarySectionCard>
 
