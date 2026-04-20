@@ -30,6 +30,7 @@ import { fetchAuthMe } from '@/api/auth'
 import { EmptyState, ErrorState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { MobileScreeningSummary } from '@/screens/clinician/components/summary/MobileScreeningSummary'
 
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianScreeningDetail'>
 
@@ -92,23 +93,6 @@ function summarizeInsightRecord(insights: Record<string, unknown>): string | nul
     if (text) return text
   }
   return null
-}
-
-function summarizeUnknownList(value: unknown, keys: string[], fallback: string): string {
-  if (!Array.isArray(value) || value.length === 0) return fallback
-  const lines = value
-    .slice(0, 3)
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null
-      const row = item as Record<string, unknown>
-      for (const key of keys) {
-        const text = asString(row[key])
-        if (text) return text
-      }
-      return null
-    })
-    .filter((line): line is string => line != null)
-  return lines.length > 0 ? lines.join(' • ') : fallback
 }
 
 function readVisitStatus(detail: Record<string, unknown> | null): {
@@ -712,59 +696,7 @@ export function ScreeningDetailScreen({ route }: Props) {
         ) : null}
 
         {activeTab === 'summary' && detail ? (
-          <>
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Encounter status</Text>
-              <Text style={styles.cardBody}>
-                Visit: {visitStatus.status === 'finalized' ? 'Finalized (locked)' : visitStatus.status === 'active' ? 'Active' : 'Not started'}
-              </Text>
-              <Text style={styles.cardBody}>Screening status: {asString(detail.status) ?? 'Unknown'}</Text>
-              <Text style={styles.cardBody}>Type: {asString(detail.screeningType) ?? 'Unknown'}</Text>
-              {visitStatus.finalizedAt ? (
-                <Text style={styles.cardBody}>Finalized at: {new Date(visitStatus.finalizedAt).toLocaleString()}</Text>
-              ) : null}
-              {!visitStatus.canFinalize && visitStatus.blockers.length > 0 ? (
-                <Text style={styles.cardBody}>Finalize blockers: {visitStatus.blockers.join(', ')}</Text>
-              ) : null}
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Clinical summary</Text>
-              <Text style={styles.cardBody}>Patient: {asString(detail.patientName) ?? 'Not available'}</Text>
-              <Text style={styles.cardBody}>
-                Screening summary: {asString(detail.screeningSummary) ?? 'No screening summary available.'}
-              </Text>
-              <Text style={styles.cardBody}>
-                Visit summary: {asString(detail.visitSummary) ?? 'No visit summary available.'}
-              </Text>
-              <Text style={styles.cardBody}>
-                Preliminary assessment:{' '}
-                {(() => {
-                  const prelim = asString((detail.preliminaryAssessment as { summary?: unknown } | null)?.summary)
-                  return prelim ? (
-                    <Text style={styles.aiGeneratedInline}>{prelim}</Text>
-                  ) : (
-                    'No preliminary assessment summary.'
-                  )
-                })()}
-              </Text>
-              <Text style={styles.cardBody}>
-                Insight timeline:{' '}
-                {(() => {
-                  const insightLine = summarizeUnknownList(
-                    (detail.scribeRecordClinicalInsights as { timeline?: unknown } | null)?.timeline,
-                    ['label', 'summary'],
-                    'No insights available.'
-                  )
-                  return insightLine !== 'No insights available.' ? (
-                    <Text style={styles.aiGeneratedInline}>{insightLine}</Text>
-                  ) : (
-                    insightLine
-                  )
-                })()}
-              </Text>
-            </View>
-          </>
+          <MobileScreeningSummary detail={detail} visitStatus={visitStatus} />
         ) : null}
 
         {activeTab === 'scribe' ? (
@@ -1140,9 +1072,6 @@ const styles = StyleSheet.create({
   },
   scribeClusterSpacer: {
     marginTop: 10,
-  },
-  aiGeneratedInline: {
-    fontStyle: 'italic',
   },
   rowTitle: {
     color: lumina.onSurface,

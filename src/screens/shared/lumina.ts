@@ -4,7 +4,12 @@ export const lumina = {
   primary: '#006B66',
   /** Support well / subtle surface (surface-container-low). Not mint/teal screen wrappers. */
   primaryContainer: '#f1f3f9',
+  secondary: '#6d4ab3',
   secondaryContainer: '#eaddff',
+  onSecondaryContainer: '#5f3ca4',
+  tertiaryContainer: '#c4e3e3',
+  onTertiaryContainer: '#375354',
+  errorContainer: '#f56965',
   surface: '#f8f9fe',
   surfaceLow: '#f1f3f9',
   surfaceContainer: '#ebeef5',
