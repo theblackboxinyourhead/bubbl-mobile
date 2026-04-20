@@ -2,23 +2,32 @@ import { StyleSheet } from 'react-native'
 
 export const lumina = {
   primary: '#006B66',
-  /** Support well / subtle surface (surface-container-low). Not mint/teal screen wrappers. */
+  /** Compatibility alias for surface-container-low (recessed support surface). Not the mint/primary-container token — see primaryFixed. */
   primaryContainer: '#f1f3f9',
+  /** Canonical mint token for style-guide primary-container / primary-fixed. */
+  primaryFixed: '#73f1e7',
   secondary: '#6d4ab3',
   secondaryContainer: '#eaddff',
   onSecondaryContainer: '#5f3ca4',
   tertiaryContainer: '#c4e3e3',
   onTertiaryContainer: '#375354',
+  onPrimaryContainer: '#005854',
   errorContainer: '#f56965',
+  onError: '#fff7f6',
   surface: '#f8f9fe',
   surfaceLow: '#f1f3f9',
   surfaceContainer: '#ebeef5',
   surfaceHigh: '#e4e8f0',
+  /** surface-container-highest */
   surfaceHighest: '#dee3ec',
+  /** surface-container-lowest */
   surfaceLowest: '#ffffff',
+  /** surface-variant equals surface-container-highest per the style guide */
+  surfaceVariant: '#dee3ec',
   surfaceDim: '#d4dae4',
   onSurface: '#2d333a',
   onSurfaceVariant: '#5a5f67',
+  outline: '#767b83',
   outlineVariant: '#adb2bb',
   error: '#ac3434',
   onPrimary: '#ffffff',
