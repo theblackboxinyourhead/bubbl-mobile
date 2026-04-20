@@ -28,6 +28,7 @@ import {
 import { ApiError } from '@/lib/apiClient'
 import { fetchAuthMe } from '@/api/auth'
 import { EmptyState, ErrorState } from '@/screens/shared/ScreenState'
+import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianScreeningDetail'>
@@ -44,6 +45,12 @@ export type ScribeUiState =
   | 'failed'
 
 type TabKey = 'summary' | 'scribe' | 'notes'
+
+const WORKSPACE_TABS: readonly SegmentedControlTab<TabKey>[] = [
+  { key: 'summary', label: 'Summary' },
+  { key: 'scribe', label: 'Scribe' },
+  { key: 'notes', label: 'Notes' },
+]
 
 type PendingChunkUpload = {
   uri: string
@@ -692,11 +699,13 @@ export function ScreeningDetailScreen({ route }: Props) {
         {actionError ? <Text style={luminaStyles.errorText}>{actionError}</Text> : null}
         {actionMessage ? <Text style={styles.info}>{actionMessage}</Text> : null}
 
-        <View style={styles.tabRow}>
-          <TabButton label="Summary" active={activeTab === 'summary'} onPress={() => setActiveTab('summary')} />
-          <TabButton label="Scribe" active={activeTab === 'scribe'} onPress={() => setActiveTab('scribe')} />
-          <TabButton label="Notes" active={activeTab === 'notes'} onPress={() => setActiveTab('notes')} />
-        </View>
+        <SegmentedControl
+          tabs={WORKSPACE_TABS}
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          fullWidth
+          accessibilityLabel="Screening workspace sections"
+        />
 
         {activeTab === 'summary' && !loading && !detail && !loadError ? (
           <EmptyState title="No screening data" body="Retry to reload this encounter." onAction={() => void refreshDetail()} actionLabel="Retry" />
@@ -1057,21 +1066,6 @@ export function ScreeningDetailScreen({ route }: Props) {
   )
 }
 
-function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.tabBtn,
-        active ? styles.tabBtnActive : undefined,
-        pressed && luminaStyles.pressedRow,
-      ]}
-      onPress={onPress}
-    >
-      <Text style={[styles.tabText, active ? styles.tabTextActive : undefined]}>{label}</Text>
-    </Pressable>
-  )
-}
-
 const styles = StyleSheet.create({
   wrap: {
     paddingHorizontal: 16,
@@ -1097,28 +1091,6 @@ const styles = StyleSheet.create({
   info: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tabBtn: {
-    borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  tabBtnActive: {
-    backgroundColor: lumina.primaryContainer,
-  },
-  tabText: {
-    color: lumina.onSurfaceVariant,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  tabTextActive: {
-    color: lumina.primary,
   },
   card: {
     borderRadius: 24,

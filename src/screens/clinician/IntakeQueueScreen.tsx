@@ -7,11 +7,19 @@ import {
 } from '@/api/screenings'
 import { handleClinicianDashboardAction } from '@/screens/clinician/dashboardActions'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
+import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'IntakeQueue'>
 
 type QueueFilter = 'all' | 'sent' | 'in review' | 'completed'
+
+const QUEUE_FILTER_TABS: readonly SegmentedControlTab<QueueFilter>[] = [
+  { key: 'all', label: 'All' },
+  { key: 'sent', label: 'Sent' },
+  { key: 'in review', label: 'In Review' },
+  { key: 'completed', label: 'Completed' },
+]
 
 function formatSentAt(value: string | null): string {
   if (!value) return 'Not sent'
@@ -102,22 +110,14 @@ export function IntakeQueueScreen({ navigation }: Props) {
         placeholderTextColor={lumina.onSurfaceVariant}
       />
 
-      <View style={styles.filterRow}>
-        {(['all', 'sent', 'in review', 'completed'] as const).map((value) => {
-          const active = filter === value
-          return (
-            <Pressable
-              key={value}
-              style={[styles.filterChip, active ? styles.filterChipActive : undefined]}
-              onPress={() => setFilter(value)}
-            >
-              <Text style={[styles.filterText, active ? styles.filterTextActive : undefined]}>
-                {value === 'all' ? 'All' : value}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </View>
+      <SegmentedControl
+        tabs={QUEUE_FILTER_TABS}
+        activeKey={filter}
+        onChange={setFilter}
+        fullWidth
+        size="compact"
+        accessibilityLabel="Queue status filter"
+      />
 
       {loading ? <LoadingState label="Loading screenings..." /> : null}
       {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
@@ -168,28 +168,6 @@ export function IntakeQueueScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   queueList: {
     gap: 10,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  filterChip: {
-    borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
-  filterChipActive: {
-    backgroundColor: lumina.surfaceHigh,
-  },
-  filterText: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  filterTextActive: {
-    color: lumina.primary,
   },
   queueRow: {
     flexDirection: 'row',

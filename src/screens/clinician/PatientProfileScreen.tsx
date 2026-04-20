@@ -8,11 +8,18 @@ import {
   type ClinicianPatientProfileScreening,
 } from '@/api/clinicians'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
+import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'PatientProfile'>
 
 type ProfileTab = 'overview' | 'history' | 'visits'
+
+const PROFILE_TABS: readonly SegmentedControlTab<ProfileTab>[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'history', label: 'History' },
+  { key: 'visits', label: 'Visits' },
+]
 
 type MedicalHistoryGroup = {
   title: string
@@ -135,24 +142,13 @@ export function PatientProfileScreen({ route, navigation }: Props) {
 
         {!loading && !error && profile ? (
           <>
-            <View style={styles.tabRow}>
-              {([
-                ['overview', 'Overview'],
-                ['history', 'History'],
-                ['visits', 'Visits'],
-              ] as const).map(([value, label]) => {
-                const active = activeTab === value
-                return (
-                  <Pressable
-                    key={value}
-                    style={[styles.tabChip, active ? styles.tabChipActive : undefined]}
-                    onPress={() => setActiveTab(value)}
-                  >
-                    <Text style={[styles.tabText, active ? styles.tabTextActive : undefined]}>{label}</Text>
-                  </Pressable>
-                )
-              })}
-            </View>
+            <SegmentedControl
+              tabs={PROFILE_TABS}
+              activeKey={activeTab}
+              onChange={setActiveTab}
+              fullWidth
+              accessibilityLabel="Patient profile sections"
+            />
 
             {activeTab === 'overview' ? (
               <View style={styles.card}>
@@ -307,28 +303,6 @@ const styles = StyleSheet.create({
     color: lumina.onSurfaceVariant,
     fontSize: 14,
     lineHeight: 20,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tabChip: {
-    borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  tabChipActive: {
-    backgroundColor: lumina.primaryContainer,
-  },
-  tabText: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: lumina.primary,
   },
   section: {
     borderRadius: 16,

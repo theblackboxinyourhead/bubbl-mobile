@@ -4,11 +4,18 @@ import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import { listClinicianPatients, type ClinicianPatientRosterItem } from '@/api/clinicians'
 import { sendScreeningInvite } from '@/api/screenings'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
+import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'Patients'>
 
 type SortMode = 'name-asc' | 'name-desc' | 'recent'
+
+const SORT_TABS: readonly SegmentedControlTab<SortMode>[] = [
+  { key: 'name-asc', label: 'A-Z' },
+  { key: 'name-desc', label: 'Z-A' },
+  { key: 'recent', label: 'Recent' },
+]
 
 function rosterScreeningTone(screeningStatus: string): 'attention' | 'ready' | 'neutral' {
   const s = screeningStatus.trim().toLowerCase()
@@ -102,26 +109,13 @@ export function PatientsScreen({ navigation }: Props) {
         placeholderTextColor={lumina.onSurfaceVariant}
       />
 
-      <View style={styles.sortRow}>
-        <Pressable
-          style={[styles.sortChip, sortMode === 'name-asc' ? styles.sortChipActive : undefined]}
-          onPress={() => setSortMode('name-asc')}
-        >
-          <Text style={[styles.sortLabel, sortMode === 'name-asc' ? styles.sortLabelActive : undefined]}>A-Z</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.sortChip, sortMode === 'name-desc' ? styles.sortChipActive : undefined]}
-          onPress={() => setSortMode('name-desc')}
-        >
-          <Text style={[styles.sortLabel, sortMode === 'name-desc' ? styles.sortLabelActive : undefined]}>Z-A</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.sortChip, sortMode === 'recent' ? styles.sortChipActive : undefined]}
-          onPress={() => setSortMode('recent')}
-        >
-          <Text style={[styles.sortLabel, sortMode === 'recent' ? styles.sortLabelActive : undefined]}>Recent</Text>
-        </Pressable>
-      </View>
+      <SegmentedControl
+        tabs={SORT_TABS}
+        activeKey={sortMode}
+        onChange={setSortMode}
+        fullWidth
+        accessibilityLabel="Patient sort mode"
+      />
 
       {loading ? <LoadingState label="Loading patient roster..." /> : null}
       {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
@@ -180,27 +174,6 @@ export function PatientsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   rosterList: {
     gap: 10,
-  },
-  sortRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  sortChip: {
-    borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
-  sortChipActive: {
-    backgroundColor: lumina.surfaceHigh,
-  },
-  sortLabel: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  sortLabelActive: {
-    color: lumina.primary,
   },
   message: {
     color: lumina.onSurfaceVariant,
