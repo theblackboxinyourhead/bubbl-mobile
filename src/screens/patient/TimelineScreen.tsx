@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchPatientHistory } from '@/api/patients'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 
 type Props = PatientTabScreenProps<'Timeline'>

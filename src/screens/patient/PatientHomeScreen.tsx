@@ -4,7 +4,7 @@ import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
 import { fetchPatientHistory } from '@/api/patients'
 import { getPatientReminderState, reconcileReminderMetadata } from '@/lib/notifications'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 
 type Props = PatientTabScreenProps<'PatientHome'>
