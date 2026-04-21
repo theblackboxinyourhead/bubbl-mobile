@@ -57,6 +57,7 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-import-resolver-typescript": "^2.7.1",
     "prettier": "^3.3.3",
+    "reactotron-react-native": "~5.1.13",
     "typescript": "~5.3.3"
   }
 }

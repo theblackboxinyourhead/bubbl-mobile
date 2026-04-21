@@ -6,6 +6,8 @@ import { registerGlobals } from 'react-native-webrtc'
 /* eslint-disable import/first */
 registerGlobals()
 
+if (__DEV__) { require('./src/devtools/reactotron') }
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import { AppState, View, ActivityIndicator, StyleSheet, type AppStateStatus } from 'react-native'
