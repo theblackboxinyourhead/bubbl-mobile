@@ -31,6 +31,14 @@ import { EmptyState, ErrorState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 import { MobileScreeningSummary } from '@/screens/clinician/components/summary/MobileScreeningSummary'
+import { MobileScribeHeroState } from '@/screens/clinician/components/scribe/MobileScribeHeroState'
+import { MobileScribeLivePanel, type LiveScribePhase } from '@/screens/clinician/components/scribe/MobileScribeLivePanel'
+import { MobileScribeProcessingPanel } from '@/screens/clinician/components/scribe/MobileScribeProcessingPanel'
+import {
+  MobileScribeReviewPanel,
+  type ClinicalInsightsForReview,
+  type ScribeRecordSummaryForReview,
+} from '@/screens/clinician/components/scribe/MobileScribeReviewPanel'
 
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianScreeningDetail'>
 
@@ -82,7 +90,7 @@ function asString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
-function summarizeInsightRecord(insights: Record<string, unknown>): string | null {
+export function summarizeInsightRecord(insights: Record<string, unknown>): string | null {
   const preferredKeys = ['label', 'summary', 'title', 'progress', 'note']
   for (const key of preferredKeys) {
     const text = asString(insights[key])
@@ -91,6 +99,86 @@ function summarizeInsightRecord(insights: Record<string, unknown>): string | nul
   for (const value of Object.values(insights)) {
     const text = asString(value)
     if (text) return text
+  }
+  return null
+}
+
+function asNonEmptyStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+function parseScribeRecordSummaryForReview(value: unknown): ScribeRecordSummaryForReview {
+  const empty: ScribeRecordSummaryForReview = {
+    summaryNarrative: null,
+    soapSubjective: [],
+    soapObjective: [],
+    soapAssessment: null,
+    soapPlan: [],
+  }
+  if (value === null || value === undefined) return empty
+  if (typeof value === 'string') {
+    return { ...empty, summaryNarrative: asString(value) }
+  }
+  if (typeof value !== 'object') return empty
+  const o = value as Record<string, unknown>
+  const narrative = asString(o.summary) ?? asString(o.narrative) ?? null
+  const structuredRaw = o.structured
+  if (!structuredRaw || typeof structuredRaw !== 'object') {
+    return { ...empty, summaryNarrative: narrative }
+  }
+  const st = structuredRaw as Record<string, unknown>
+  const assessmentRaw = st.assessment
+  const soapAssessment =
+    typeof assessmentRaw === 'string' && assessmentRaw.trim().length > 0
+      ? assessmentRaw.trim()
+      : null
+  return {
+    summaryNarrative: narrative,
+    soapSubjective: asNonEmptyStringArray(st.subjective),
+    soapObjective: asNonEmptyStringArray(st.objective),
+    soapAssessment,
+    soapPlan: asNonEmptyStringArray(st.plan),
+  }
+}
+
+function parseClinicalInsightsForReview(value: unknown): ClinicalInsightsForReview {
+  const empty: ClinicalInsightsForReview = {
+    missingInfo: [],
+    contradictions: [],
+    redFlags: [],
+    medDiscrepancies: [],
+    followUpQuestions: [],
+    planSuggestions: [],
+    notesForClinician: [],
+  }
+  if (value === null || value === undefined || typeof value !== 'object') return empty
+  const o = value as Record<string, unknown>
+  return {
+    missingInfo: asNonEmptyStringArray(o.missingInfo ?? o.missing_info),
+    contradictions: asNonEmptyStringArray(o.contradictions),
+    redFlags: asNonEmptyStringArray(o.redFlags ?? o.red_flags),
+    medDiscrepancies: asNonEmptyStringArray(o.medDiscrepancies ?? o.med_discrepancies),
+    followUpQuestions: asNonEmptyStringArray(o.followUpQuestions ?? o.follow_up_questions),
+    planSuggestions: asNonEmptyStringArray(o.planSuggestions ?? o.plan_suggestions),
+    notesForClinician: asNonEmptyStringArray(o.notesForClinician ?? o.notes_for_clinician),
+  }
+}
+
+function visitSummaryDisplayText(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') return asString(value)
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>
+    return (
+      asString(o.summary) ??
+      asString(o.text) ??
+      asString(o.note) ??
+      asString(o.visitSummary)
+    )
   }
   return null
 }
@@ -672,6 +760,53 @@ export function ScreeningDetailScreen({ route }: Props) {
     }
   }, [mapGenerationError, refreshDetail, screeningId])
 
+  const insightPreviewLines = useMemo(
+    () =>
+      scribeInsightRows
+        .slice(-5)
+        .map((row) => summarizeInsightRecord(row.insights) ?? row.chunkText),
+    [scribeInsightRows]
+  )
+
+  const scribeRecordSummaryParsed = useMemo(
+    () => parseScribeRecordSummaryForReview(detail?.scribeRecordSummary),
+    [detail]
+  )
+  const visitSummaryReviewText = useMemo(() => visitSummaryDisplayText(detail?.visitSummary), [detail])
+  const clinicalInsightsParsed = useMemo(
+    () => parseClinicalInsightsForReview(detail?.scribeRecordClinicalInsights),
+    [detail]
+  )
+
+  const isScribeProcessing =
+    scribe === 'stopping' || isGeneratingSummary || isGeneratingInsights
+  const isScribeReview =
+    (scribe === 'completed' || scribe === 'generated-review') && !isScribeProcessing
+  const isScribeLive =
+    scribe === 'starting' ||
+    scribe === 'recording' ||
+    scribe === 'paused-locally' ||
+    scribe === 'reconnecting'
+
+  let livePhase: LiveScribePhase = 'reconnecting'
+  if (scribe === 'starting') livePhase = 'starting'
+  else if (scribe === 'recording') livePhase = 'recording'
+  else if (scribe === 'paused-locally') livePhase = 'paused-locally'
+
+  const showScribeRefreshFooter =
+    canScribe &&
+    (scribe === 'paused-locally' ||
+      scribe === 'completed' ||
+      scribe === 'generated-review' ||
+      scribe === 'failed')
+
+  const transcriptReady = scribeChunkRows.length > 0
+  const summaryReady = generatedSummary || !!detail?.scribeRecordSummary
+  const insightsReady = generatedInsights || !!detail?.scribeRecordClinicalInsights
+  const generationPrimaryLabel =
+    generationStepMessage ??
+    (summaryReady && insightsReady ? 'Regenerate summary & insights' : 'Generate summary & insights')
+
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
       <View style={styles.stage}>
@@ -702,206 +837,96 @@ export function ScreeningDetailScreen({ route }: Props) {
         {activeTab === 'scribe' ? (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Scribe session</Text>
-            <Text style={styles.cardBody}>Scribe state: {scribe}</Text>
-            <Text style={styles.cardBody}>Timer: {formatDuration(recordingElapsedMs)}</Text>
-            <Text style={styles.scribeMetaLine}>Chunks uploaded: {chunkCount}</Text>
-            <Text style={styles.scribeMetaLine}>Insights timeline rows: {timelineCount}</Text>
 
             {scribeFlowError ? <Text style={luminaStyles.errorText}>{scribeFlowError}</Text> : null}
 
-            {scribeChunkRows.length > 0 ? (
-              <View style={styles.row}>
-                <Text style={styles.rowTitle}>Recent transcript</Text>
-                {scribeChunkRows.slice(-5).map((chunk, idx) => {
-                  const key = `${chunk.sessionId ?? 'chunk'}-${chunk.sequenceNumber ?? idx}-${chunk.timestamp}`
-                  return (
-                    <Text key={key} style={styles.rowBody}>
-                      {chunk.content}
-                    </Text>
-                  )
-                })}
-              </View>
-            ) : null}
+            {!canScribe ? (
+              <>
+                <Text style={styles.cardBody}>Scribe state: {scribe}</Text>
+                <Text style={styles.cardBody}>Timer: {formatDuration(recordingElapsedMs)}</Text>
+                <Text style={styles.scribeMetaLine}>Chunks uploaded: {chunkCount}</Text>
+                <Text style={styles.scribeMetaLine}>Insights timeline rows: {timelineCount}</Text>
 
-            {scribeInsightRows.length > 0 ? (
-              <View style={styles.row}>
-                <Text style={styles.rowTitle}>Recent insights</Text>
-                {scribeInsightRows.slice(-5).map((row) => (
-                  <Text
-                    key={`${row.sessionId}-${row.sequenceNumber}-${row.timestamp}`}
-                    style={styles.rowBody}
-                  >
-                    {summarizeInsightRecord(row.insights) ?? row.chunkText}
-                  </Text>
-                ))}
-              </View>
-            ) : null}
-
-            {canScribe ? (
-              <View style={styles.scribeControlStack}>
-                {scribe === 'idle' ? (
-                  <Pressable
-                    style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                    onPress={onStart}
-                  >
-                    <Text style={luminaStyles.primaryButtonText}>Start scribe</Text>
-                  </Pressable>
+                {scribeChunkRows.length > 0 ? (
+                  <View style={styles.row}>
+                    <Text style={styles.rowTitle}>Recent transcript</Text>
+                    {scribeChunkRows.slice(-5).map((chunk, idx) => {
+                      const key = `${chunk.sessionId ?? 'chunk'}-${chunk.sequenceNumber ?? idx}-${chunk.timestamp}`
+                      return (
+                        <Text key={key} style={styles.rowBody}>
+                          {chunk.content}
+                        </Text>
+                      )
+                    })}
+                  </View>
                 ) : null}
 
-                {scribe === 'starting' ? (
-                  <Pressable
-                    style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                    onPress={onStart}
-                    disabled
-                  >
-                    <ActivityIndicator color={lumina.onPrimary} />
-                    <Text style={luminaStyles.primaryButtonText}>Starting scribe...</Text>
-                  </Pressable>
-                ) : null}
-
-                {scribe === 'recording' ? (
-                  <>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onPauseLocal()}
-                    >
-                      <Text style={luminaStyles.actionTintedButtonText}>Pause local</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onStop('save')}
-                    >
-                      <Text style={luminaStyles.primaryButtonText}>Stop and save</Text>
-                    </Pressable>
-                  </>
-                ) : null}
-
-                {scribe === 'paused-locally' ? (
-                  <>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onResumeLocal()}
-                    >
-                      <Text style={luminaStyles.primaryButtonText}>Resume</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onStop('save')}
-                    >
-                      <Text style={luminaStyles.actionTintedButtonText}>Stop and save</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onStop('discard')}
-                    >
-                      <Text style={luminaStyles.actionTintedButtonText}>Discard</Text>
-                    </Pressable>
-                  </>
-                ) : null}
-
-                {scribe === 'reconnecting' ? (
-                  <>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onResumeLocal()}
-                    >
-                      <Text style={luminaStyles.primaryButtonText}>Resume</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onStop('save')}
-                    >
-                      <Text style={luminaStyles.actionTintedButtonText}>Stop and save</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void onStop('discard')}
-                    >
-                      <Text style={luminaStyles.actionTintedButtonText}>Discard</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                      onPress={() => void recoverScribeTranscript(screeningId, sessionId ? { sessionId } : {})}
-                    >
-                      <Text style={luminaStyles.actionTintedButtonText}>Recover transcript</Text>
-                    </Pressable>
-                  </>
-                ) : null}
-
-                {scribe === 'stopping' ? (
-                  <Pressable
-                    style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                    disabled
-                    onPress={() => undefined}
-                  >
-                    <ActivityIndicator color={lumina.onPrimary} />
-                    <Text style={luminaStyles.primaryButtonText}>Stopping…</Text>
-                  </Pressable>
-                ) : null}
-
-                {(scribe === 'completed' || scribe === 'generated-review') ? (
-                  (() => {
-                    const transcriptReady = scribeChunkRows.length > 0
-                    const summaryReady = generatedSummary || !!detail?.scribeRecordSummary
-                    const insightsReady = generatedInsights || !!detail?.scribeRecordClinicalInsights
-                    const generating = isGeneratingSummary || isGeneratingInsights
-                    const primaryLabel = generationStepMessage
-                      ?? (summaryReady && insightsReady
-                        ? 'Regenerate summary & insights'
-                        : 'Generate summary & insights')
-                    return (
-                      <>
-                        <Pressable
-                          style={({ pressed }) => [
-                            luminaStyles.primaryButton,
-                            (!transcriptReady || generating) ? styles.disabled : undefined,
-                            pressed && luminaStyles.pressedButton,
-                          ]}
-                          onPress={() => void runGenerateSummaryAndInsights()}
-                          disabled={!transcriptReady || generating}
-                        >
-                          {generating ? <ActivityIndicator color={lumina.onPrimary} /> : null}
-                          <Text style={luminaStyles.primaryButtonText}>{primaryLabel}</Text>
-                        </Pressable>
-                        {!transcriptReady ? (
-                          <Text style={styles.cardBody}>
-                            Transcript is not available yet. Refresh session data to re-check.
-                          </Text>
-                        ) : null}
-                      </>
-                    )
-                  })()
-                ) : null}
-
-                {scribe === 'failed' ? (
-                  <>
-                    <Pressable
-                      style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-                      onPress={onStart}
-                    >
-                      <Text style={luminaStyles.primaryButtonText}>Start scribe</Text>
-                    </Pressable>
-                    {sessionId ? (
-                      <Pressable
-                        style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-                        onPress={() => void recoverScribeTranscript(screeningId, { sessionId })}
+                {scribeInsightRows.length > 0 ? (
+                  <View style={styles.row}>
+                    <Text style={styles.rowTitle}>Recent insights</Text>
+                    {scribeInsightRows.slice(-5).map((row) => (
+                      <Text
+                        key={`${row.sessionId}-${row.sequenceNumber}-${row.timestamp}`}
+                        style={styles.rowBody}
                       >
-                        <Text style={luminaStyles.actionTintedButtonText}>Recover transcript</Text>
-                      </Pressable>
-                    ) : null}
-                  </>
+                        {summarizeInsightRecord(row.insights) ?? row.chunkText}
+                      </Text>
+                    ))}
+                  </View>
                 ) : null}
-              </View>
+
+                <Text style={styles.cardBody}>Scribe controls are disabled for this account.</Text>
+              </>
+            ) : isScribeProcessing ? (
+              <MobileScribeProcessingPanel
+                scribeStopping={scribe === 'stopping'}
+                generationStepMessage={generationStepMessage}
+                isGeneratingSummary={isGeneratingSummary}
+                isGeneratingInsights={isGeneratingInsights}
+              />
+            ) : scribe === 'failed' ? (
+              <MobileScribeHeroState
+                variant="failed"
+                onStart={onStart}
+                sessionId={sessionId}
+                onRecoverTranscript={
+                  sessionId
+                    ? () => void recoverScribeTranscript(screeningId, { sessionId })
+                    : undefined
+                }
+              />
+            ) : isScribeReview ? (
+              <MobileScribeReviewPanel
+                scribeRecordSummary={scribeRecordSummaryParsed}
+                visitSummaryText={visitSummaryReviewText}
+                clinicalInsights={clinicalInsightsParsed}
+                transcriptReady={transcriptReady}
+                generating={isGeneratingSummary || isGeneratingInsights}
+                generationPrimaryLabel={generationPrimaryLabel}
+                onGenerate={() => void runGenerateSummaryAndInsights()}
+                onOpenVisitWorkspace={() => setActiveTab('notes')}
+              />
+            ) : isScribeLive ? (
+              <MobileScribeLivePanel
+                phase={livePhase}
+                timerLabel={formatDuration(recordingElapsedMs)}
+                chunkRows={scribeChunkRows}
+                insightPreviewLines={insightPreviewLines}
+                onStart={onStart}
+                onPauseLocal={() => void onPauseLocal()}
+                onResumeLocal={() => void onResumeLocal()}
+                onStopSave={() => void onStop('save')}
+                onStopDiscard={() => void onStop('discard')}
+                onRecoverTranscript={() =>
+                  void recoverScribeTranscript(screeningId, sessionId ? { sessionId } : {})
+                }
+                onRefreshSessionData={() => void hydrate()}
+              />
             ) : (
-              <Text style={styles.cardBody}>Scribe controls are disabled for this account.</Text>
+              <MobileScribeHeroState variant="idle" onStart={onStart} />
             )}
 
-            {canScribe &&
-            (scribe === 'reconnecting' ||
-              scribe === 'paused-locally' ||
-              scribe === 'completed' ||
-              scribe === 'generated-review' ||
-              scribe === 'failed') ? (
+            {showScribeRefreshFooter ? (
               <Pressable
                 style={({ pressed }) => [
                   luminaStyles.actionTintedButton,
@@ -1063,12 +1088,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: lumina.surface,
     padding: 10,
-  },
-  scribeControlStack: {
-    gap: 5,
-    borderRadius: 16,
-    backgroundColor: lumina.surface,
-    padding: 8,
   },
   scribeClusterSpacer: {
     marginTop: 10,

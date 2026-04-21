@@ -1,23 +1,37 @@
+import type { ReactNode } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { lumina } from '@/screens/shared/lumina'
 
 type Props = {
   label: string
   value?: string | null
+  /** When set, rendered in place of the string `value` (Encounter Snapshot pills, etc.). */
+  valueNode?: ReactNode
   secondary?: string | null
   emphasize?: boolean
   inline?: boolean
 }
 
-export function SummaryDataRow({ label, value, secondary, emphasize = false, inline = false }: Props) {
+export function SummaryDataRow({
+  label,
+  value,
+  valueNode,
+  secondary,
+  emphasize = false,
+  inline = false,
+}: Props) {
   const displayValue = value && value.trim().length > 0 ? value : '—'
   if (inline) {
     return (
       <View style={styles.inlineRow}>
         <Text style={[styles.label, styles.inlineLabel]}>{label}</Text>
-        <Text style={[styles.value, styles.inlineValue, emphasize && styles.valueEmphasis]}>
-          {displayValue}
-        </Text>
+        {valueNode != null ? (
+          <View style={styles.inlineValueNode}>{valueNode}</View>
+        ) : (
+          <Text style={[styles.value, styles.inlineValue, emphasize && styles.valueEmphasis]}>
+            {displayValue}
+          </Text>
+        )}
         {secondary ? <Text style={[styles.secondary, styles.inlineSecondary]}>{secondary}</Text> : null}
       </View>
     )
@@ -57,6 +71,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   inlineValue: {
+    flexShrink: 1,
+    flexBasis: 'auto',
+  },
+  inlineValueNode: {
     flexShrink: 1,
     flexBasis: 'auto',
   },

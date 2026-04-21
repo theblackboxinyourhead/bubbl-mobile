@@ -218,6 +218,47 @@ function formatFinalizedAt(finalizedAt: string | null): string | null {
   return date.toLocaleString()
 }
 
+/** Web `getBadgeVariant` / screeningUtils — encounter snapshot parity */
+function encounterScreeningStatusBadgeTone(raw: unknown): SummaryBadgeTone {
+  const s = (asString(raw) ?? '').toLowerCase()
+  switch (s) {
+    case 'completed':
+      return 'badge-green'
+    case 'sent':
+      return 'badge-gray'
+    case 'in review':
+      return 'badge-blue'
+    case 'error':
+      return 'badge-red'
+    case 'cancelled':
+      return 'badge-cancelled'
+    case 'processing':
+      return 'badge-yellow'
+    default:
+      return 'neutral'
+  }
+}
+
+/** Web ScreeningRow type colors (indigo / teal) */
+function encounterScreeningTypeBadgeTone(raw: unknown): SummaryBadgeTone {
+  const s = (asString(raw) ?? '').toLowerCase()
+  switch (s) {
+    case 'web':
+      return 'badge-indigo'
+    case 'phone':
+      return 'badge-teal'
+    default:
+      return 'neutral'
+  }
+}
+
+/** Web ScreeningRow visit status: active -> blue, finalized -> secondary */
+function encounterVisitBadgeTone(status: VisitStatusView['status']): SummaryBadgeTone {
+  if (status === 'active') return 'badge-blue'
+  if (status === 'finalized') return 'badge-secondary'
+  return 'neutral'
+}
+
 const CHIP_GROUP_KEYS: readonly MedicalGroupKey[] = ['conditions', 'allergies']
 
 export function MobileScreeningSummary({ detail, visitStatus }: Props) {
@@ -232,6 +273,9 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
   const assessmentSummary = asString(preliminaryAssessment?.summary)
   const overallUrgency = asUrgency(preliminaryAssessment?.overallUrgency)
   const finalizedAtLabel = formatFinalizedAt(visitStatus.finalizedAt)
+  const visitLabel = formatVisitStatusLabel(visitStatus.status)
+  const screeningStatusLabel = asString(detail.status) ?? 'unknown'
+  const screeningTypeLabel = asString(detail.screeningType) ?? 'unknown'
   return (
     <View style={styles.stack}>
       <SummarySectionCard
@@ -240,9 +284,33 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
         icon="time-outline"
         meta={visitStatus.status === 'finalized' ? 'Locked' : undefined}
       >
-        <SummaryDataRow label="Visit" value={formatVisitStatusLabel(visitStatus.status)} inline />
-        <SummaryDataRow label="Screening status" value={asString(detail.status) ?? 'unknown'} inline />
-        <SummaryDataRow label="Type" value={asString(detail.screeningType) ?? 'unknown'} inline />
+        <SummaryDataRow
+          label="Visit"
+          inline
+          valueNode={
+            <SummaryBadge label={visitLabel} tone={encounterVisitBadgeTone(visitStatus.status)} />
+          }
+        />
+        <SummaryDataRow
+          label="Screening status"
+          inline
+          valueNode={
+            <SummaryBadge
+              label={screeningStatusLabel}
+              tone={encounterScreeningStatusBadgeTone(detail.status)}
+            />
+          }
+        />
+        <SummaryDataRow
+          label="Type"
+          inline
+          valueNode={
+            <SummaryBadge
+              label={screeningTypeLabel}
+              tone={encounterScreeningTypeBadgeTone(detail.screeningType)}
+            />
+          }
+        />
         {finalizedAtLabel ? (
           <SummaryDataRow label="Finalized at" value={finalizedAtLabel} inline />
         ) : null}
