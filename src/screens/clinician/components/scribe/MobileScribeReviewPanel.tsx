@@ -25,9 +25,13 @@ type Props = {
   visitSummaryText: string | null
   clinicalInsights: ClinicalInsightsForReview
   transcriptReady: boolean
+  sessionId: string | null
   generating: boolean
   generationPrimaryLabel: string
+  /** When true, generation CTA is non-interactive success state (web Summary Complete). */
+  summaryGenerationComplete: boolean
   onGenerate: () => void
+  onAddToRecording: () => void
   onOpenVisitWorkspace: () => void
 }
 
@@ -154,18 +158,31 @@ export function MobileScribeReviewPanel({
   visitSummaryText,
   clinicalInsights,
   transcriptReady,
+  sessionId,
   generating,
   generationPrimaryLabel,
+  summaryGenerationComplete,
   onGenerate,
+  onAddToRecording,
   onOpenVisitWorkspace,
 }: Props) {
+  const generationEnabled =
+    !generating && !summaryGenerationComplete && (transcriptReady || !!sessionId)
+
   return (
     <View style={styles.wrap}>
       <Pressable
         style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+        onPress={onAddToRecording}
+      >
+        <Text style={luminaStyles.primaryButtonText}>Add to Recording</Text>
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
         onPress={onOpenVisitWorkspace}
       >
-        <Text style={luminaStyles.primaryButtonText}>Open visit workspace</Text>
+        <Text style={luminaStyles.actionTintedButtonText}>Open visit workspace</Text>
       </Pressable>
 
       <ScribeSummarySection data={scribeRecordSummary} />
@@ -173,19 +190,27 @@ export function MobileScribeReviewPanel({
       <ClinicalInsightsSection data={clinicalInsights} />
 
       <View style={styles.genBlock}>
-        <Pressable
-          style={({ pressed }) => [
-            luminaStyles.actionTintedButton,
-            (!transcriptReady || generating) ? styles.disabled : undefined,
-            pressed && luminaStyles.pressedButton,
-          ]}
-          onPress={onGenerate}
-          disabled={!transcriptReady || generating}
-        >
-          {generating ? <ActivityIndicator color={lumina.primary} /> : null}
-          <Text style={luminaStyles.actionTintedButtonText}>{generationPrimaryLabel}</Text>
-        </Pressable>
-        {!transcriptReady ? (
+        {summaryGenerationComplete ? (
+          <View style={luminaStyles.actionTintedButton}>
+            <Text style={[luminaStyles.actionTintedButtonText, styles.successLabel]}>
+              {generationPrimaryLabel}
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={({ pressed }) => [
+              luminaStyles.actionTintedButton,
+              !generationEnabled ? styles.disabled : undefined,
+              pressed && luminaStyles.pressedButton,
+            ]}
+            onPress={onGenerate}
+            disabled={!generationEnabled}
+          >
+            {generating ? <ActivityIndicator color={lumina.primary} /> : null}
+            <Text style={luminaStyles.actionTintedButtonText}>{generationPrimaryLabel}</Text>
+          </Pressable>
+        )}
+        {!transcriptReady && !sessionId ? (
           <Text style={styles.hint}>
             Transcript is not available yet. Refresh session data to re-check.
           </Text>
@@ -245,5 +270,8 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.6,
+  },
+  successLabel: {
+    fontWeight: '700',
   },
 })

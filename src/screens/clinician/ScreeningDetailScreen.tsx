@@ -183,6 +183,94 @@ function visitSummaryDisplayText(value: unknown): string | null {
   return null
 }
 
+/** Local readers for scribe fields on raw screening detail (`fetchScreeningRaw` stays untyped at the API layer). */
+function readDetailScribeRecordSummary(detail: Record<string, unknown> | null): unknown {
+  if (!detail) return undefined
+  return detail['scribeRecordSummary']
+}
+
+function readDetailVisitSummary(detail: Record<string, unknown> | null): unknown {
+  if (!detail) return undefined
+  return detail['visitSummary']
+}
+
+function readDetailScribeClinicalInsights(detail: Record<string, unknown> | null): unknown {
+  if (!detail) return undefined
+  return detail['scribeRecordClinicalInsights']
+}
+
+function detailHasPersistedScribeOutput(detail: Record<string, unknown> | null): boolean {
+  if (!detail) return false
+  const sum = parseScribeRecordSummaryForReview(readDetailScribeRecordSummary(detail))
+  if (
+    sum.summaryNarrative ||
+    sum.soapSubjective.length > 0 ||
+    sum.soapObjective.length > 0 ||
+    sum.soapAssessment ||
+    sum.soapPlan.length > 0
+  ) {
+    return true
+  }
+  if (visitSummaryDisplayText(readDetailVisitSummary(detail))) return true
+  const ci = parseClinicalInsightsForReview(readDetailScribeClinicalInsights(detail))
+  return (
+    ci.missingInfo.length > 0 ||
+    ci.contradictions.length > 0 ||
+    ci.redFlags.length > 0 ||
+    ci.medDiscrepancies.length > 0 ||
+    ci.followUpQuestions.length > 0 ||
+    ci.planSuggestions.length > 0 ||
+    ci.notesForClinician.length > 0
+  )
+}
+
+function chunkMergeKey(chunk: ScribeChunkRow): string {
+  if (typeof chunk.sessionId === 'string' && typeof chunk.sequenceNumber === 'number') {
+    return `sid:${chunk.sessionId}|seq:${chunk.sequenceNumber}`
+  }
+  return `ts:${chunk.timestamp}|${chunk.content}`
+}
+
+function mergeChunkRows(prev: ScribeChunkRow[], incoming: ScribeChunkRow[]): ScribeChunkRow[] {
+  if (incoming.length === 0) return prev
+  const merged = new Map<string, ScribeChunkRow>()
+  prev.forEach((chunk) => merged.set(chunkMergeKey(chunk), chunk))
+  incoming.forEach((chunk) => merged.set(chunkMergeKey(chunk), chunk))
+  return Array.from(merged.values()).sort(
+    (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+  )
+}
+
+function insightMergeKey(row: ScribeInsightsTimelineRow): string {
+  return `${row.sessionId}|${row.sequenceNumber ?? row.timestamp}`
+}
+
+function mergeInsightRows(
+  prev: ScribeInsightsTimelineRow[],
+  incoming: ScribeInsightsTimelineRow[],
+): ScribeInsightsTimelineRow[] {
+  if (incoming.length === 0) return prev
+  const merged = new Map<string, ScribeInsightsTimelineRow>()
+  prev.forEach((row) => merged.set(insightMergeKey(row), row))
+  incoming.forEach((row) => merged.set(insightMergeKey(row), row))
+  return Array.from(merged.values()).sort((a, b) => {
+    const timeDiff = Date.parse(a.timestamp) - Date.parse(b.timestamp)
+    if (timeDiff !== 0) return timeDiff
+    const sessionDiff = a.sessionId.localeCompare(b.sessionId)
+    if (sessionDiff !== 0) return sessionDiff
+    return (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0)
+  })
+}
+
+function isStaleRecoveryActionMessage(message: string | null): boolean {
+  if (!message) return false
+  return (
+    message.includes('active server session') ||
+    message.includes('Recovered active scribe') ||
+    message.includes('Resume recording or stop')
+  )
+}
+
 function readVisitStatus(detail: Record<string, unknown> | null): {
   status: 'active' | 'finalized' | null
   finalizedAt: string | null
@@ -324,18 +412,14 @@ export function ScreeningDetailScreen({ route }: Props) {
     async (chunk: PendingChunkUpload): Promise<void> => {
       const activeSessionId = sessionIdRef.current
       if (!activeSessionId) throw new Error('Missing sessionId')
-      const form = new FormData()
-      form.append('sessionId', activeSessionId)
-      form.append('idempotencyKey', chunk.idempotencyKey)
-      form.append('sequenceNumber', String(chunk.sequenceNumber))
-      form.append('startedAtMs', String(chunk.startedAtMs))
-      form.append('audio', {
-        uri: chunk.uri,
-        name: `chunk-${chunk.sequenceNumber}.m4a`,
-        type: 'audio/m4a',
-      } as unknown as Blob)
 
-      const result = await withRetry(() => scribeRecord(screeningId, form), 3, 500)
+      const result = await withRetry(() => scribeRecord(screeningId, {
+        uri: chunk.uri,
+        sessionId: activeSessionId,
+        idempotencyKey: chunk.idempotencyKey,
+        sequenceNumber: chunk.sequenceNumber,
+        startedAtMs: chunk.startedAtMs,
+      }), 3, 500)
       if (result.inserted === false) {
         if (result.reason === 'session_closed') {
           setScribe('completed')
@@ -345,9 +429,25 @@ export function ScreeningDetailScreen({ route }: Props) {
           )
         } else if (result.reason === 'empty_transcript') {
           setScribeFlowError('No transcript was captured for a recorded chunk.')
+        } else {
+          setScribeFlowError('A chunk was received by the server but was not stored.')
         }
       } else {
         setScribeFlowError(null)
+        setActionError(null)
+        setGenerationStepMessage(null)
+        setActionMessage((m) => (isStaleRecoveryActionMessage(m) ? null : m))
+        try {
+          const data = await scribeChunks(screeningId)
+          const rows = (data.chunks ?? []) as ScribeChunkRow[]
+          setScribeChunkRows((prev) => {
+            const next = mergeChunkRows(prev, rows)
+            setChunkCount(next.length)
+            return next
+          })
+        } catch {
+          /* keep existing merged rows */
+        }
       }
     },
     [screeningId]
@@ -359,7 +459,7 @@ export function ScreeningDetailScreen({ route }: Props) {
       uploadChainRef.current = uploadChainRef.current
         .then(() => uploadChunk(chunk))
         .catch(() => {
-          setScribeFlowError('A recording chunk failed to upload. Transcript may be incomplete.')
+          setScribeFlowError('Recording upload failed. The audio chunk could not be read or sent to the server.')
           setScribe('failed')
         })
     },
@@ -390,24 +490,37 @@ export function ScreeningDetailScreen({ route }: Props) {
   }, [beginLocalRecording, enqueueChunkUpload, stopAndUnloadCurrentRecording])
 
   const hydrate = useCallback(
-    async (sessionOverride?: string | null) => {
-      const sid = sessionOverride ?? sessionIdRef.current
-      const [session, chunks, insights] = await Promise.all([
+    async (_sessionOverride?: string | null) => {
+      const [session, chunks] = await Promise.all([
         scribeSession(screeningId),
         scribeChunks(screeningId),
-        sid ? scribeInsights(screeningId, sid) : scribeInsights(screeningId),
       ])
       const payload = session as ScribeSessionResponse
-      const chunkRows = chunks.chunks as ScribeChunkRow[]
+      const activeScribeSessionId = payload.activeSession?.id
+      const insights = await (activeScribeSessionId
+        ? scribeInsights(screeningId, activeScribeSessionId)
+        : scribeInsights(screeningId))
+      const chunkRows = (chunks.chunks ?? []) as ScribeChunkRow[]
       const insightRows = (insights.timeline ?? []) as ScribeInsightsTimelineRow[]
-      setScribeChunkRows(chunkRows)
-      setScribeInsightRows(insightRows)
-      setChunkCount(chunkRows.length)
-      setTimelineCount(insightRows.length)
-      if (payload.activeSession?.id) {
-        setSessionId(payload.activeSession.id)
+      setScribeChunkRows((prev) => {
+        const next = mergeChunkRows(prev, chunkRows)
+        setChunkCount(next.length)
+        return next
+      })
+      setScribeInsightRows((prev) => {
+        const next = mergeInsightRows(prev, insightRows)
+        setTimelineCount(next.length)
+        return next
+      })
+      if (activeScribeSessionId) {
+        setSessionId(activeScribeSessionId)
+      } else if (payload.lastStoppedSession?.id) {
+        setSessionId(payload.lastStoppedSession.id)
       }
       setScribeFlowError(null)
+      setActionError(null)
+      setGenerationStepMessage(null)
+      setActionMessage((m) => (isStaleRecoveryActionMessage(m) ? null : m))
     },
     [screeningId]
   )
@@ -447,15 +560,21 @@ export function ScreeningDetailScreen({ route }: Props) {
       void scribeInsights(screeningId, sessionId)
         .then((data) => {
           const rows = (data.timeline ?? []) as ScribeInsightsTimelineRow[]
-          setScribeInsightRows(rows)
-          setTimelineCount(rows.length)
+          setScribeInsightRows((prev) => {
+            const next = mergeInsightRows(prev, rows)
+            setTimelineCount(next.length)
+            return next
+          })
         })
         .catch(() => undefined)
       void scribeChunks(screeningId)
         .then((data) => {
           const rows = (data.chunks ?? []) as ScribeChunkRow[]
-          setScribeChunkRows(rows)
-          setChunkCount(rows.length)
+          setScribeChunkRows((prev) => {
+            const next = mergeChunkRows(prev, rows)
+            setChunkCount(next.length)
+            return next
+          })
         })
         .catch(() => undefined)
     }, INSIGHTS_POLL_MS)
@@ -512,12 +631,16 @@ export function ScreeningDetailScreen({ route }: Props) {
 
   const onStart = useCallback(async () => {
     if (!canScribe || scribe === 'recording' || scribe === 'starting') return
+    const enteringAppend = scribe === 'completed' || scribe === 'generated-review'
     setActionError(null)
-    setActionMessage(null)
     setScribeFlowError(null)
+    setGenerationStepMessage(null)
+    setActionMessage(null)
     setScribe('starting')
-    setGeneratedSummary(false)
-    setGeneratedInsights(false)
+    if (enteringAppend) {
+      setGeneratedSummary(false)
+      setGeneratedInsights(false)
+    }
     elapsedBaseMsRef.current = 0
     setRecordingElapsedMs(0)
     let startedSessionId: string | null = null
@@ -528,7 +651,10 @@ export function ScreeningDetailScreen({ route }: Props) {
       sequenceRef.current = 1
       await beginLocalRecording()
       setScribe('recording')
-      setActionMessage('Scribe recording started.')
+      setScribeFlowError(null)
+      setActionError(null)
+      setGenerationStepMessage(null)
+      setActionMessage(enteringAppend ? 'Recording started.' : 'Scribe recording started.')
     } catch (e) {
       if (startedSessionId) {
         await scribeStop(screeningId, startedSessionId, 'save').catch(() => undefined)
@@ -576,6 +702,9 @@ export function ScreeningDetailScreen({ route }: Props) {
     try {
       await beginLocalRecording()
       setScribe('recording')
+      setScribeFlowError(null)
+      setActionError(null)
+      setGenerationStepMessage(null)
       setActionMessage('Recording resumed.')
     } catch {
       setActionError('Could not resume microphone recording.')
@@ -729,12 +858,17 @@ export function ScreeningDetailScreen({ route }: Props) {
   const runGenerateSummaryAndInsights = useCallback(async () => {
     setActionError(null)
     setActionMessage(null)
+    setScribeFlowError(null)
     setIsGeneratingSummary(true)
-    setGenerationStepMessage('Processing transcript…')
+    setGenerationStepMessage('Processing transcript. This may take a minute...')
     try {
       await generateScribeSummary(screeningId)
       setGeneratedSummary(true)
       await refreshDetail()
+      setScribeFlowError(null)
+      setActionError(null)
+      setActionMessage((m) => (isStaleRecoveryActionMessage(m) ? null : m))
+      setScribe('generated-review')
     } catch (e) {
       setActionError(mapGenerationError(e))
       setIsGeneratingSummary(false)
@@ -744,21 +878,30 @@ export function ScreeningDetailScreen({ route }: Props) {
     }
     setIsGeneratingSummary(false)
     setIsGeneratingInsights(true)
-    setGenerationStepMessage('Generating insights…')
+    setGenerationStepMessage('Processing transcript. This may take a minute...')
     try {
       await generateScribeInsights(screeningId)
       setGeneratedInsights(true)
       await refreshDetail()
-      setScribe('generated-review')
+      setScribeFlowError(null)
+      setActionError(null)
       setActionMessage('Scribe summary and insights generated.')
     } catch (e) {
       setActionError(mapGenerationError(e))
-      setScribe('completed')
     } finally {
       setIsGeneratingInsights(false)
       setGenerationStepMessage(null)
     }
   }, [mapGenerationError, refreshDetail, screeningId])
+
+  const runHydrateFromUi = useCallback(async () => {
+    setActionError(null)
+    try {
+      await hydrate()
+    } catch {
+      setActionError('Could not refresh session data.')
+    }
+  }, [hydrate])
 
   const insightPreviewLines = useMemo(
     () =>
@@ -769,14 +912,46 @@ export function ScreeningDetailScreen({ route }: Props) {
   )
 
   const scribeRecordSummaryParsed = useMemo(
-    () => parseScribeRecordSummaryForReview(detail?.scribeRecordSummary),
-    [detail]
+    () => parseScribeRecordSummaryForReview(readDetailScribeRecordSummary(detail)),
+    [detail],
   )
-  const visitSummaryReviewText = useMemo(() => visitSummaryDisplayText(detail?.visitSummary), [detail])
+  const visitSummaryReviewText = useMemo(
+    () => visitSummaryDisplayText(readDetailVisitSummary(detail)),
+    [detail],
+  )
   const clinicalInsightsParsed = useMemo(
-    () => parseClinicalInsightsForReview(detail?.scribeRecordClinicalInsights),
-    [detail]
+    () => parseClinicalInsightsForReview(readDetailScribeClinicalInsights(detail)),
+    [detail],
   )
+
+  const reviewGeneration = useMemo(() => {
+    if (isGeneratingSummary || isGeneratingInsights) {
+      return {
+        label: generationStepMessage ?? 'Processing transcript. This may take a minute...',
+        summaryComplete: false,
+      }
+    }
+    if (scribe === 'generated-review') {
+      return { label: 'Summary Complete', summaryComplete: true }
+    }
+    if (scribe === 'completed') {
+      const hasPrior =
+        detailHasPersistedScribeOutput(detail) || generatedSummary || generatedInsights
+      return {
+        label: hasPrior ? 'Regenerate Summary' : 'Generate Summary',
+        summaryComplete: false,
+      }
+    }
+    return { label: 'Generate Summary', summaryComplete: false }
+  }, [
+    detail,
+    generatedInsights,
+    generatedSummary,
+    generationStepMessage,
+    isGeneratingInsights,
+    isGeneratingSummary,
+    scribe,
+  ])
 
   const isScribeProcessing =
     scribe === 'stopping' || isGeneratingSummary || isGeneratingInsights
@@ -801,11 +976,6 @@ export function ScreeningDetailScreen({ route }: Props) {
       scribe === 'failed')
 
   const transcriptReady = scribeChunkRows.length > 0
-  const summaryReady = generatedSummary || !!detail?.scribeRecordSummary
-  const insightsReady = generatedInsights || !!detail?.scribeRecordClinicalInsights
-  const generationPrimaryLabel =
-    generationStepMessage ??
-    (summaryReady && insightsReady ? 'Regenerate summary & insights' : 'Generate summary & insights')
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
@@ -901,9 +1071,12 @@ export function ScreeningDetailScreen({ route }: Props) {
                 visitSummaryText={visitSummaryReviewText}
                 clinicalInsights={clinicalInsightsParsed}
                 transcriptReady={transcriptReady}
+                sessionId={sessionId}
                 generating={isGeneratingSummary || isGeneratingInsights}
-                generationPrimaryLabel={generationPrimaryLabel}
+                generationPrimaryLabel={reviewGeneration.label}
+                summaryGenerationComplete={reviewGeneration.summaryComplete}
                 onGenerate={() => void runGenerateSummaryAndInsights()}
+                onAddToRecording={() => void onStart()}
                 onOpenVisitWorkspace={() => setActiveTab('notes')}
               />
             ) : isScribeLive ? (
@@ -920,7 +1093,7 @@ export function ScreeningDetailScreen({ route }: Props) {
                 onRecoverTranscript={() =>
                   void recoverScribeTranscript(screeningId, sessionId ? { sessionId } : {})
                 }
-                onRefreshSessionData={() => void hydrate()}
+                onRefreshSessionData={() => void runHydrateFromUi()}
               />
             ) : (
               <MobileScribeHeroState variant="idle" onStart={onStart} />
@@ -933,7 +1106,7 @@ export function ScreeningDetailScreen({ route }: Props) {
                   styles.scribeClusterSpacer,
                   pressed && luminaStyles.pressedButton,
                 ]}
-                onPress={() => void hydrate()}
+                onPress={() => void runHydrateFromUi()}
               >
                 <Text style={luminaStyles.actionTintedButtonText}>Refresh session data</Text>
               </Pressable>

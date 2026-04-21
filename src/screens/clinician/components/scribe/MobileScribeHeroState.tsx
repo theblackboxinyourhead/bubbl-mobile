@@ -22,7 +22,7 @@ export function MobileScribeHeroState({ variant, onStart, sessionId = null, onRe
           style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
           onPress={onStart}
         >
-          <Text style={luminaStyles.primaryButtonText}>Start Scribe</Text>
+          <Text style={luminaStyles.primaryButtonText}>Start Recording</Text>
         </Pressable>
       </View>
     )
@@ -39,7 +39,7 @@ export function MobileScribeHeroState({ variant, onStart, sessionId = null, onRe
           style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
           onPress={onStart}
         >
-          <Text style={luminaStyles.primaryButtonText}>Start Scribe</Text>
+          <Text style={luminaStyles.primaryButtonText}>Start Recording</Text>
         </Pressable>
         {sessionId && onRecoverTranscript ? (
           <Pressable

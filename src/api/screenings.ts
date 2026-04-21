@@ -1,5 +1,8 @@
+import * as FileSystem from 'expo-file-system'
 import { v4 as uuidv4 } from 'uuid'
-import { apiJson, apiFetch } from '@/lib/apiClient'
+import { apiJson } from '@/lib/apiClient'
+import { getApiBaseUrl } from '@/lib/config'
+import { getAccessToken } from '@/lib/supabase'
 import type { MemoryItem } from '@/lib/openai/webrtc/types'
 import {
   OpenAiPromptsSchema,
@@ -225,19 +228,38 @@ export async function scribeInsights(screeningId: string, sessionId?: string) {
 
 export async function scribeRecord(
   screeningId: string,
-  form: FormData,
-  opts?: { signal?: AbortSignal }
-) {
-  const res = await apiFetch(`/api/screenings/${screeningId}/scribe/record`, {
-    method: 'POST',
-    body: form,
-    signal: opts?.signal,
-  })
-  if (!res.ok) {
-    const t = await res.text()
-    throw new Error(t || `scribe record ${res.status}`)
+  payload: {
+    uri: string
+    sessionId: string
+    idempotencyKey: string
+    sequenceNumber: number
+    startedAtMs: number
   }
-  return res.json() as Promise<{ inserted?: boolean; reason?: string }>
+): Promise<{ inserted?: boolean; reason?: string }> {
+  const base = getApiBaseUrl()
+  const url = `${base}/api/screenings/${screeningId}/scribe/record`
+  const accessToken = await getAccessToken()
+  const headers: Record<string, string> = {}
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  }
+  const result = await FileSystem.uploadAsync(url, payload.uri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: 'audio',
+    mimeType: 'audio/m4a',
+    parameters: {
+      sessionId: payload.sessionId,
+      idempotencyKey: payload.idempotencyKey,
+      sequenceNumber: String(payload.sequenceNumber),
+      startedAtMs: String(payload.startedAtMs),
+    },
+    headers,
+  })
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(result.body || `scribe record ${result.status}`)
+  }
+  return JSON.parse(result.body) as { inserted?: boolean; reason?: string }
 }
 
 export async function generateScribeSummary(screeningId: string) {

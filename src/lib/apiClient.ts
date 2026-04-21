@@ -27,7 +27,7 @@ async function authorizedFetch(path: string, init: RequestInit, allowRefresh: bo
   const url = `${base}${path}`
   const accessToken = await getAccessToken()
   const headers = new Headers(init.headers)
-  if (!headers.has('Content-Type') && init.body) {
+  if (!headers.has('Content-Type') && init.body && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
   if (accessToken) {
@@ -43,7 +43,7 @@ async function authorizedFetch(path: string, init: RequestInit, allowRefresh: bo
     }
     const refreshedToken = await getAccessToken()
     const h2 = new Headers(init.headers)
-    if (!h2.has('Content-Type') && init.body) {
+    if (!h2.has('Content-Type') && init.body && !(init.body instanceof FormData)) {
       h2.set('Content-Type', 'application/json')
     }
     if (refreshedToken) {

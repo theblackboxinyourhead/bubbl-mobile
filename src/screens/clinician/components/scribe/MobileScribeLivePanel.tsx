@@ -85,7 +85,7 @@ export function MobileScribeLivePanel({
             disabled
           >
             <ActivityIndicator color={lumina.onPrimary} />
-            <Text style={luminaStyles.primaryButtonText}>Starting scribe…</Text>
+            <Text style={luminaStyles.primaryButtonText}>Starting…</Text>
           </Pressable>
         ) : null}
 
@@ -95,7 +95,7 @@ export function MobileScribeLivePanel({
               style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
               onPress={onStopSave}
             >
-              <Text style={luminaStyles.primaryButtonText}>Stop & Save</Text>
+              <Text style={luminaStyles.primaryButtonText}>Stop Session</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
@@ -118,7 +118,7 @@ export function MobileScribeLivePanel({
               style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
               onPress={onStopSave}
             >
-              <Text style={luminaStyles.actionTintedButtonText}>Stop & Save</Text>
+              <Text style={luminaStyles.actionTintedButtonText}>Stop Session</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.tertiaryButton, pressed && luminaStyles.pressedButton]}
@@ -141,7 +141,7 @@ export function MobileScribeLivePanel({
               style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
               onPress={onStopSave}
             >
-              <Text style={luminaStyles.actionTintedButtonText}>Stop & Save</Text>
+              <Text style={luminaStyles.actionTintedButtonText}>Stop Session</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.tertiaryButton, pressed && luminaStyles.pressedButton]}
