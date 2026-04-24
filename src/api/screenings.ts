@@ -38,14 +38,6 @@ export type ScribeInsightsTimelineRow = {
   insights: Record<string, unknown>
 }
 
-export type VisitAddendum = {
-  id: string
-  content: string
-  createdAt: string
-  authorUserId: string
-  authorName: string | null
-}
-
 export type ClinicianScreeningQueueItem = {
   id: string
   patientId: string | null
@@ -294,17 +286,6 @@ export async function updateVisitNote(screeningId: string, note: string) {
   return apiJson<{ note: string }>(`/api/screenings/${screeningId}/visit-note`, {
     method: 'PATCH',
     body: JSON.stringify({ note }),
-  })
-}
-
-export async function listVisitAddenda(screeningId: string) {
-  return apiJson<{ addenda: VisitAddendum[] }>(`/api/screenings/${screeningId}/addenda`)
-}
-
-export async function createVisitAddendum(screeningId: string, content: string) {
-  return apiJson<VisitAddendum>(`/api/screenings/${screeningId}/addenda`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
   })
 }
 

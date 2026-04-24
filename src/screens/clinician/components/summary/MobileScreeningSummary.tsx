@@ -276,6 +276,22 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
   const visitLabel = formatVisitStatusLabel(visitStatus.status)
   const screeningStatusLabel = asString(detail.status) ?? 'unknown'
   const screeningTypeLabel = asString(detail.screeningType) ?? 'unknown'
+  const isScreeningCompleted = detail.status === 'completed'
+  const isScreeningSent = detail.status === 'sent'
+  const isScreeningInReview = detail.status === 'in review'
+  const isIncompleteScreening = isScreeningSent || isScreeningInReview
+  const assessmentPendingCopy = 'Assessment details will appear after screening is completed.'
+  const symptomsEmptyLabel = isScreeningSent
+    ? 'Patient has not completed symptom screening yet.'
+    : isScreeningInReview
+      ? 'Symptom screening is not complete yet.'
+      : 'No symptoms reported.'
+  const assessmentSummaryEmptyLabel = isIncompleteScreening
+    ? 'AI assessment will appear after screening is completed.'
+    : 'No assessment summary available.'
+  const diagnosesEmptyLabel = isIncompleteScreening
+    ? assessmentPendingCopy
+    : 'No diagnoses available.'
   return (
     <View style={styles.stack}>
       <SummarySectionCard
@@ -399,7 +415,7 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
             ))}
           </View>
         ) : (
-          <SummaryEmptyState label="No symptoms reported." />
+          <SummaryEmptyState label={symptomsEmptyLabel} />
         )}
       </SummarySectionCard>
 
@@ -408,37 +424,45 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
         density="hero"
         tone="accent"
         icon="sparkles-outline"
-        headerAccessory={
-          overallUrgency ? (
-            <SummaryBadge
-              label={`${cap(overallUrgency)} urgency`}
-              tone={urgencyBadgeTone(overallUrgency)}
-            />
-          ) : undefined
-        }
       >
         {assessmentSummary ? (
           <Text style={styles.assessmentBody}>{assessmentSummary}</Text>
         ) : (
-          <SummaryEmptyState label="No assessment summary available." />
+          <SummaryEmptyState label={assessmentSummaryEmptyLabel} />
         )}
-        {diagnoses.length > 0 ? (
-          <View style={styles.diagnosisStack}>
-            {diagnoses.map((diagnosis, idx) => (
-              <View key={`diagnosis-${idx}`} style={styles.diagnosisRow}>
-                <Text style={styles.diagnosisText}>{cap(diagnosis.condition)}</Text>
-                {diagnosis.confidence != null ? (
-                  <SummaryBadge
-                    label={`${diagnosis.confidence}%`}
-                    tone={confidenceBadgeTone(diagnosis.confidence)}
-                  />
-                ) : null}
-              </View>
-            ))}
+        {overallUrgency || isIncompleteScreening ? (
+          <View style={styles.subsection}>
+            <Text style={styles.subsectionTitle}>Recommended Urgency</Text>
+            {overallUrgency ? (
+              <SummaryBadge
+                label={`${cap(overallUrgency)} urgency`}
+                tone={urgencyBadgeTone(overallUrgency)}
+              />
+            ) : (
+              <SummaryEmptyState label={assessmentPendingCopy} />
+            )}
           </View>
-        ) : (
-          <SummaryEmptyState label="No diagnoses available." />
-        )}
+        ) : null}
+        <View style={styles.subsection}>
+          <Text style={styles.subsectionTitle}>Potential Diagnoses</Text>
+          {diagnoses.length > 0 ? (
+            <View style={styles.diagnosisStack}>
+              {diagnoses.map((diagnosis, idx) => (
+                <View key={`diagnosis-${idx}`} style={styles.diagnosisRow}>
+                  <Text style={styles.diagnosisText}>{cap(diagnosis.condition)}</Text>
+                  {diagnosis.confidence != null ? (
+                    <SummaryBadge
+                      label={`${diagnosis.confidence}%`}
+                      tone={confidenceBadgeTone(diagnosis.confidence)}
+                    />
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <SummaryEmptyState label={diagnosesEmptyLabel} />
+          )}
+        </View>
       </SummarySectionCard>
     </View>
   )

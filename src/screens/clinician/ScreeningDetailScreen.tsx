@@ -5,11 +5,8 @@ import { v4 as uuidv4 } from 'uuid'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
 import {
-  createVisitAddendum,
   fetchScreeningRaw,
   finalizeScreeningVisit,
-  listVisitAddenda,
-  sendScreeningInvite,
   scribeRecord,
   scribeStart,
   scribeStop,
@@ -23,7 +20,6 @@ import {
   type ScribeChunkRow,
   type ScribeInsightsTimelineRow,
   type ScribeSessionResponse,
-  type VisitAddendum,
 } from '@/api/screenings'
 import { ApiError } from '@/lib/apiClient'
 import { fetchAuthMe } from '@/api/auth'
@@ -181,6 +177,13 @@ function visitSummaryDisplayText(value: unknown): string | null {
     )
   }
   return null
+}
+
+function splitVisitNoteLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
 }
 
 /** Local readers for scribe fields on raw screening detail (`fetchScreeningRaw` stays untyped at the API layer). */
@@ -343,9 +346,7 @@ export function ScreeningDetailScreen({ route }: Props) {
   const [generatedSummary, setGeneratedSummary] = useState(false)
   const [generatedInsights, setGeneratedInsights] = useState(false)
   const [visitNote, setVisitNote] = useState('')
-  const [addenda, setAddenda] = useState<VisitAddendum[]>([])
-  const [addendumDraft, setAddendumDraft] = useState('')
-  const [invitePatientId, setInvitePatientId] = useState('')
+  const [savedVisitNote, setSavedVisitNote] = useState('')
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -362,6 +363,8 @@ export function ScreeningDetailScreen({ route }: Props) {
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const uploadChainRef = useRef<Promise<void>>(Promise.resolve())
   const visitStatus = useMemo(() => readVisitStatus(detail), [detail])
+  const savedVisitNoteLines = useMemo(() => splitVisitNoteLines(savedVisitNote), [savedVisitNote])
+  const canSaveVisitNote = visitNote.trim().length > 0 && visitStatus.status !== 'finalized'
 
   useEffect(() => {
     scribeRef.current = scribe
@@ -537,7 +540,8 @@ export function ScreeningDetailScreen({ route }: Props) {
         ? (s.visit as Record<string, unknown>)
         : null
       const note = asString(visit?.clinicianNote) ?? ''
-      setVisitNote(note)
+      setSavedVisitNote(note)
+      setVisitNote('')
       if (canScribe || me.capabilities.canUseScribeControls) {
         await hydrate()
       }
@@ -770,11 +774,6 @@ export function ScreeningDetailScreen({ route }: Props) {
     }
   }, [clearChunkTimer, stopAndUnloadCurrentRecording])
 
-  const patientId = useMemo(() => {
-    const raw = detail?.patientId
-    return typeof raw === 'string' ? raw : ''
-  }, [detail])
-
   const runVisitFinalize = useCallback(async () => {
     setActionError(null)
     try {
@@ -791,58 +790,24 @@ export function ScreeningDetailScreen({ route }: Props) {
   }, [refreshDetail, screeningId])
 
   const runVisitNoteSave = useCallback(async () => {
+    const nextNote = visitNote.trim()
+    if (!nextNote) return
     setActionError(null)
     try {
-      await updateVisitNote(screeningId, visitNote)
+      const combinedNote = savedVisitNote
+        ? `${savedVisitNote}\n${nextNote}`
+        : nextNote
+      const response = await updateVisitNote(screeningId, combinedNote)
+      if (typeof response.note === 'string') {
+        setSavedVisitNote(response.note)
+      }
+      setVisitNote('')
       setActionMessage('Visit note saved.')
       await refreshDetail()
     } catch {
       setActionError('Could not save visit note.')
     }
-  }, [refreshDetail, screeningId, visitNote])
-
-  const runLoadAddenda = useCallback(async () => {
-    setActionError(null)
-    try {
-      const response = await listVisitAddenda(screeningId)
-      setAddenda(response.addenda)
-    } catch {
-      setActionError('Could not load addenda.')
-    }
-  }, [screeningId])
-
-  const runCreateAddendum = useCallback(async () => {
-    if (!addendumDraft.trim()) return
-    setActionError(null)
-    try {
-      await createVisitAddendum(screeningId, addendumDraft.trim())
-      setAddendumDraft('')
-      setActionMessage('Addendum saved.')
-      await runLoadAddenda()
-    } catch {
-      setActionError('Could not create addendum.')
-    }
-  }, [addendumDraft, runLoadAddenda, screeningId])
-
-  useEffect(() => {
-    if (activeTab !== 'notes') return
-    void runLoadAddenda()
-  }, [activeTab, runLoadAddenda])
-
-  const runInvite = useCallback(async () => {
-    const targetPatientId = invitePatientId.trim() || patientId
-    if (!targetPatientId) {
-      setActionError('Patient ID is required for invite.')
-      return
-    }
-    setActionError(null)
-    try {
-      await sendScreeningInvite({ patientId: targetPatientId })
-      setActionMessage('Invite sent.')
-    } catch {
-      setActionError('Could not send invite.')
-    }
-  }, [invitePatientId, patientId])
+  }, [refreshDetail, savedVisitNote, screeningId, visitNote])
 
   const mapGenerationError = useCallback((err: unknown): string => {
     const raw = extractApiErrorMessage(err)
@@ -1116,7 +1081,44 @@ export function ScreeningDetailScreen({ route }: Props) {
 
         {activeTab === 'notes' && detail ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Visit notes & finalization</Text>
+            <Text style={styles.sectionTitle}>Visit notes</Text>
+
+            <Text style={styles.fieldLabel}>Saved note</Text>
+            <View style={styles.row}>
+              <Text style={styles.rowTitle}>Clinician note</Text>
+              {savedVisitNoteLines.length > 0 ? (
+                savedVisitNoteLines.map((line, index) => (
+                  <View key={`${index}-${line}`} style={styles.bulletRow}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={[styles.rowBody, styles.bulletBody]}>{line}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={[styles.rowBody, styles.emptyNoteText]}>No visit note saved yet.</Text>
+              )}
+            </View>
+
+            <Text style={styles.fieldLabel}>New note</Text>
+            <TextInput
+              style={styles.input}
+              value={visitNote}
+              onChangeText={setVisitNote}
+              multiline
+              placeholder="Add clinician note"
+              placeholderTextColor={lumina.onSurfaceVariant}
+            />
+            <Pressable
+              style={({ pressed }) => [
+                luminaStyles.actionTintedButton,
+                !canSaveVisitNote ? styles.disabled : undefined,
+                pressed && canSaveVisitNote && luminaStyles.pressedButton,
+              ]}
+              onPress={() => void runVisitNoteSave()}
+              disabled={!canSaveVisitNote}
+            >
+              <Text style={luminaStyles.actionTintedButtonText}>Save note</Text>
+            </Pressable>
+
             <Pressable
               style={({ pressed }) => [
                 luminaStyles.primaryButton,
@@ -1129,65 +1131,6 @@ export function ScreeningDetailScreen({ route }: Props) {
               <Text style={luminaStyles.primaryButtonText}>
                 {visitStatus.status === 'finalized' ? 'Visit finalized' : 'Finalize visit'}
               </Text>
-            </Pressable>
-
-            <Text style={styles.fieldLabel}>Visit note</Text>
-            <TextInput
-              style={styles.input}
-              value={visitNote}
-              onChangeText={setVisitNote}
-              multiline
-              placeholder="Add clinician note"
-              placeholderTextColor={lumina.onSurfaceVariant}
-            />
-            <Pressable
-              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-              onPress={() => void runVisitNoteSave()}
-            >
-              <Text style={luminaStyles.actionTintedButtonText}>Save note</Text>
-            </Pressable>
-
-            <Text style={styles.fieldLabel}>Addenda (post-finalize)</Text>
-            <TextInput
-              style={styles.input}
-              value={addendumDraft}
-              onChangeText={setAddendumDraft}
-              multiline
-              placeholder="Add correction or addendum"
-              placeholderTextColor={lumina.onSurfaceVariant}
-            />
-            <Pressable
-              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-              onPress={() => void runCreateAddendum()}
-            >
-              <Text style={luminaStyles.actionTintedButtonText}>Add addendum</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-              onPress={() => void runLoadAddenda()}
-            >
-              <Text style={luminaStyles.actionTintedButtonText}>Refresh addenda</Text>
-            </Pressable>
-            {addenda.map((item) => (
-              <View key={item.id} style={styles.row}>
-                <Text style={styles.rowTitle}>{item.authorName || 'Clinician'}</Text>
-                <Text style={styles.rowBody}>{item.content}</Text>
-              </View>
-            ))}
-
-            <Text style={styles.fieldLabel}>Invite patient</Text>
-            <TextInput
-              style={styles.input}
-              value={invitePatientId}
-              onChangeText={setInvitePatientId}
-              placeholder={patientId ? `Default: ${patientId}` : 'Patient UUID'}
-              placeholderTextColor={lumina.onSurfaceVariant}
-            />
-            <Pressable
-              style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-              onPress={() => void runInvite()}
-            >
-              <Text style={luminaStyles.actionTintedButtonText}>Send invite</Text>
             </Pressable>
           </View>
         ) : null}
@@ -1262,6 +1205,19 @@ const styles = StyleSheet.create({
     backgroundColor: lumina.surface,
     padding: 10,
   },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  bullet: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  bulletBody: {
+    flex: 1,
+  },
   scribeClusterSpacer: {
     marginTop: 10,
   },
@@ -1274,6 +1230,9 @@ const styles = StyleSheet.create({
     color: lumina.onSurfaceVariant,
     fontSize: 14,
     lineHeight: 20,
+  },
+  emptyNoteText: {
+    fontStyle: 'italic',
   },
   disabled: {
     opacity: 0.6,
