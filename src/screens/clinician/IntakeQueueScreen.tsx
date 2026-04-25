@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useFocusEffect } from '@react-navigation/native'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import {
   listScreeningsForClinician,
@@ -69,6 +70,12 @@ export function IntakeQueueScreen({ navigation }: Props) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useFocusEffect(
+    useCallback(() => {
+      void load()
+    }, [load])
+  )
 
   const filteredRows = useMemo(() => {
     const q = normalize(search)

@@ -291,7 +291,7 @@ export async function updateVisitNote(screeningId: string, note: string) {
 
 export async function sendScreeningInvite(input: { patientId: string; clinicianName?: string }) {
   const idempotencyKey = uuidv4()
-  return apiJson<{ success: boolean; sentAt?: string | null; error?: string; code?: string }>('/api/screenings/invite', {
+  return apiJson<{ success: boolean; sentAt: string; error?: string; code?: string }>('/api/screenings/invite', {
     method: 'POST',
     body: JSON.stringify({ ...input, idempotencyKey }),
   })
