@@ -51,7 +51,7 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
   )
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
 

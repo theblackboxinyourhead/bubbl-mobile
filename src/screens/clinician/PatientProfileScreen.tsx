@@ -133,7 +133,7 @@ export function PatientProfileScreen({ route, navigation }: Props) {
   const screeningRows = profile?.screenings ?? []
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={styles.wrap}>
       <View style={styles.stage}>
         <Text style={styles.subtitle}>Identity, screenings, and visits.</Text>
 

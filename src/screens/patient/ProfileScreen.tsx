@@ -208,7 +208,7 @@ export function ProfileScreen({ onSignOut }: Props) {
   }
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {error && !data ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && data ? <ErrorState title="Refresh failed" body={error} onRetry={() => void refresh()} /> : null}
