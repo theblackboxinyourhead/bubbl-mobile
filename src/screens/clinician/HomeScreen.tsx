@@ -266,15 +266,36 @@ export function HomeScreen({ navigation, route }: Props) {
           <View style={styles.metricStack}>
             <View style={[luminaStyles.card, styles.metricCell]}>
               <Text style={styles.metricValue}>{needsAttentionRowsAll.length}</Text>
-              <Text style={[luminaStyles.metaText, styles.metricLabel]}>Needs attention</Text>
+              <Text
+                style={[luminaStyles.metaText, styles.metricLabel]}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                Needs attention
+              </Text>
             </View>
             <View style={[luminaStyles.card, styles.metricCell]}>
               <Text style={styles.metricValue}>{visitReadinessRowsAll.length}</Text>
-              <Text style={[luminaStyles.metaText, styles.metricLabel]}>Ready visits</Text>
+              <Text
+                style={[luminaStyles.metaText, styles.metricLabel]}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                Ready visits
+              </Text>
             </View>
             <View style={[luminaStyles.card, styles.metricCell]}>
               <Text style={styles.metricValue}>{recentActivityRowsAll.length}</Text>
-              <Text style={[luminaStyles.metaText, styles.metricLabel]}>Recent activity</Text>
+              <Text
+                style={[luminaStyles.metaText, styles.metricLabel]}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                Recent activity
+              </Text>
             </View>
           </View>
         ) : null}
@@ -413,20 +434,33 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   metricStack: {
+    flexDirection: 'row',
+    width: '100%',
     gap: 12,
   },
   metricCell: {
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    alignItems: 'flex-start',
+    flex: 1,
+    minHeight: 96,
+    padding: 14,
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metricValue: {
     color: lumina.onSurface,
-    fontSize: 18,
-    fontFamily: luminaFonts.displaySemi,
+    fontSize: 28,
+    lineHeight: 28,
+    fontFamily: luminaFonts.display,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   metricLabel: {
-    marginTop: 4,
+    color: lumina.onSurfaceVariant,
+    fontSize: 11,
+    lineHeight: 14,
+    fontFamily: luminaFonts.bodyMedium,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   visitReadinessFocused: {
     backgroundColor: 'rgba(0, 107, 102, 0.08)',
