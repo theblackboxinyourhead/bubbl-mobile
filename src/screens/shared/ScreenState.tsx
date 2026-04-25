@@ -1,10 +1,36 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { useEffect, useRef } from 'react'
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 export function LoadingState({ label = 'Loading...' }: { label?: string }) {
+  const pulseOpacity = useRef(new Animated.Value(0.35)).current
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseOpacity, {
+          toValue: 0.8,
+          duration: 850,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseOpacity, {
+          toValue: 0.3,
+          duration: 850,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    )
+    pulseLoop.start()
+    return () => pulseLoop.stop()
+  }, [pulseOpacity])
+
   return (
     <View style={styles.stateCard}>
-      <ActivityIndicator color={lumina.primary} />
+      <View style={styles.loadingPulseTrack}>
+        <Animated.View style={[styles.loadingPulseFill, { opacity: pulseOpacity }]} />
+      </View>
       <Text style={styles.stateText}>{label}</Text>
     </View>
   )
@@ -61,19 +87,33 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 10,
   },
+  loadingPulseTrack: {
+    width: '64%',
+    alignSelf: 'center',
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(109, 74, 179, 0.08)',
+    overflow: 'hidden',
+  },
+  loadingPulseFill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    backgroundColor: 'rgba(115, 241, 231, 0.48)',
+  },
   stateTitle: {
     color: lumina.onSurface,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
   },
   errorTitle: {
     color: lumina.error,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
   },
   stateText: {
     color: lumina.onSurfaceVariant,
     lineHeight: 22,
     fontSize: 15,
+    fontFamily: luminaFonts.body,
   },
 })

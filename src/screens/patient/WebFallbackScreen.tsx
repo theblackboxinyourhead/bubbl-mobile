@@ -31,7 +31,7 @@ export function WebFallbackScreen({ route }: Props) {
 
 const styles = StyleSheet.create({
   screen: {
-    ...luminaStyles.screen,
+    ...luminaStyles.screenTransparent,
     padding: 16,
     justifyContent: 'center',
   },

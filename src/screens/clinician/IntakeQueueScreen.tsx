@@ -101,7 +101,7 @@ export function IntakeQueueScreen({ navigation }: Props) {
   )
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
       <TextInput
         style={luminaStyles.input}
         value={search}

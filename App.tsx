@@ -10,12 +10,19 @@ if (__DEV__) { require('./src/devtools/reactotron') }
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
+import { useFonts } from 'expo-font'
 import { AppState, View, ActivityIndicator, StyleSheet, type AppStateStatus } from 'react-native'
 import { NavigationContainer } from '@react-navigation/native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as Linking from 'expo-linking'
 import * as Notifications from 'expo-notifications'
+import { Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope'
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+} from '@expo-google-fonts/plus-jakarta-sans'
 import { supabase } from '@/lib/supabase'
 import { ApiError } from '@/lib/apiClient'
 import { fetchAuthMe } from '@/api/auth'
@@ -37,6 +44,7 @@ import {
   reconcileReminderMetadata,
 } from '@/lib/notifications'
 import { SessionProvider } from '@/lib/session-provider'
+import { AtmosphericBackground } from '@/screens/shared/AtmosphericBackground'
 import { lumina } from '@/screens/shared/lumina'
 import type { PatientStackParamList, ClinicianStackParamList } from '@/navigation/RootNavigator'
 /* eslint-enable import/first */
@@ -55,6 +63,14 @@ function parseVerifyUrl(url: string): { screeningId: string | null; full: string
 type LoggedOutPath = 'launchChoice' | 'patientAuth' | 'patientInvite' | 'clinicianAuth'
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Manrope_700Bold,
+    Manrope_600SemiBold,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+  })
+
   const [appState, setAppState] = useState<AppStateStatus>(() => AppState.currentState)
   const [ready, setReady] = useState(false)
   const [mode, setMode] = useState<'launch' | 'patient' | 'clinician'>('launch')
@@ -519,7 +535,7 @@ export default function App() {
     flushPendingRoutes()
   }, [mode, ready, authFlushTick, flushPendingRoutes])
 
-  if (!ready) {
+  if (!fontsLoaded || !ready) {
     return (
       <View style={styles.boot}>
         <ActivityIndicator size="large" />
@@ -532,6 +548,7 @@ export default function App() {
       <SafeAreaProvider>
         <SessionProvider>
           <View style={styles.flex}>
+            <AtmosphericBackground />
             <NavigationContainer
               ref={navigationRef}
               linking={linking}

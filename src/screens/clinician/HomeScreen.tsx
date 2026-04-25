@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   LayoutChangeEvent,
   Pressable,
@@ -9,6 +9,11 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native'
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated'
 import { useFocusEffect } from '@react-navigation/native'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import {
@@ -25,7 +30,7 @@ import {
   isSupportedDashboardAction,
 } from '@/screens/clinician/dashboardActions'
 import { ErrorState, LoadingState, EmptyState } from '@/screens/shared/ScreenState'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'ClinicianHome'>
 
@@ -242,60 +247,62 @@ export function HomeScreen({ navigation, route }: Props) {
   )
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      style={luminaStyles.screen}
-      contentContainerStyle={luminaStyles.pageContent}
-    >
-      {meta ? (
-        <Text style={styles.clinicEyebrow} numberOfLines={1}>
-          {meta.company.name ?? 'Clinic'}
-        </Text>
-      ) : null}
+    <View style={styles.root}>
+      <ScrollView
+        ref={scrollRef}
+        style={luminaStyles.screenTransparent}
+        contentContainerStyle={luminaStyles.pageContent}
+      >
+        {meta ? (
+          <Text style={styles.clinicEyebrow} numberOfLines={1}>
+            {meta.company.name ?? 'Clinic'}
+          </Text>
+        ) : null}
 
-      {loading ? <LoadingState label="Loading dashboard..." /> : null}
-      {error ? <ErrorState body={error} onRetry={() => void loadDashboard()} /> : null}
+        {loading ? <LoadingState label="Loading dashboard..." /> : null}
+        {error ? <ErrorState body={error} onRetry={() => void loadDashboard()} /> : null}
 
-      {!loading && !error ? (
-        <View style={styles.metricStrip}>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>{needsAttentionRowsAll.length}</Text>
-            <Text style={[luminaStyles.metaText, styles.metricLabel]}>Needs attention</Text>
+        {!loading && !error ? (
+          <View style={styles.metricStack}>
+            <View style={[luminaStyles.card, styles.metricCell]}>
+              <Text style={styles.metricValue}>{needsAttentionRowsAll.length}</Text>
+              <Text style={[luminaStyles.metaText, styles.metricLabel]}>Needs attention</Text>
+            </View>
+            <View style={[luminaStyles.card, styles.metricCell]}>
+              <Text style={styles.metricValue}>{visitReadinessRowsAll.length}</Text>
+              <Text style={[luminaStyles.metaText, styles.metricLabel]}>Ready visits</Text>
+            </View>
+            <View style={[luminaStyles.card, styles.metricCell]}>
+              <Text style={styles.metricValue}>{recentActivityRowsAll.length}</Text>
+              <Text style={[luminaStyles.metaText, styles.metricLabel]}>Recent activity</Text>
+            </View>
           </View>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>{visitReadinessRowsAll.length}</Text>
-            <Text style={[luminaStyles.metaText, styles.metricLabel]}>Ready visits</Text>
-          </View>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>{recentActivityRowsAll.length}</Text>
-            <Text style={[luminaStyles.metaText, styles.metricLabel]}>Recent activity</Text>
-          </View>
-        </View>
-      ) : null}
+        ) : null}
 
-      <Section
-        title="Needs attention"
-        emptyText="No urgent items."
-        rows={needsAttentionRows}
-        onPressRow={runAction}
-      />
+        <Section
+          title="Needs attention"
+          emptyText="No urgent items."
+          rows={needsAttentionRows}
+          onPressRow={runAction}
+        />
 
-      <Section
-        title="Visit readiness"
-        emptyText="No upcoming visits in this window."
-        rows={visitReadinessRows}
-        onPressRow={runAction}
-        containerStyle={focusVisitReadiness ? styles.visitReadinessFocused : undefined}
-        onLayout={focusVisitReadiness ? onVisitReadinessSectionLayout : undefined}
-      />
+        <Section
+          title="Visit readiness"
+          emptyText="No upcoming visits in this window."
+          rows={visitReadinessRows}
+          onPressRow={runAction}
+          containerStyle={focusVisitReadiness ? styles.visitReadinessFocused : undefined}
+          onLayout={focusVisitReadiness ? onVisitReadinessSectionLayout : undefined}
+        />
 
-      <Section
-        title="Recent activity"
-        emptyText="No activity."
-        rows={recentActivityRows}
-        onPressRow={runAction}
-      />
-    </ScrollView>
+        <Section
+          title="Recent activity"
+          emptyText="No activity."
+          rows={recentActivityRows}
+          onPressRow={runAction}
+        />
+      </ScrollView>
+    </View>
   )
 }
 
@@ -314,7 +321,11 @@ function Section({
   containerStyle?: StyleProp<ViewStyle>
   onLayout?: (e: LayoutChangeEvent) => void
 }) {
-  const sectionStyle: StyleProp<ViewStyle> = [styles.sectionListBlock, containerStyle]
+  const sectionStyle: StyleProp<ViewStyle> = [
+    luminaStyles.card,
+    styles.sectionListBlock,
+    containerStyle,
+  ]
   if (rows.length === 0) {
     return (
       <View style={sectionStyle} onLayout={onLayout}>
@@ -329,9 +340,8 @@ function Section({
       {rows.map((row) => {
         const canOpen = isSupportedDashboardAction(row.action)
         return (
-          <Pressable
+          <AnimatedRow
             key={row.id}
-            style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
             disabled={!canOpen}
             onPress={() => {
               if (!canOpen) return
@@ -349,48 +359,77 @@ function Section({
                 <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
               </View>
             </View>
-          </Pressable>
+          </AnimatedRow>
         )
       })}
     </View>
   )
 }
 
+function AnimatedRow({
+  children,
+  disabled,
+  onPress,
+}: {
+  children: ReactNode
+  disabled: boolean
+  onPress: () => void
+}) {
+  const scale = useSharedValue(1)
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }))
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        style={luminaStyles.listRowCompact}
+        disabled={disabled}
+        onPressIn={() => {
+          scale.value = withSpring(0.98, { stiffness: 300, damping: 30 })
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { stiffness: 300, damping: 30 })
+        }}
+        onPress={onPress}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  )
+}
+
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   sectionListBlock: {
-    gap: 8,
+    gap: 12,
   },
   clinicEyebrow: {
     color: lumina.onSurfaceVariant,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: luminaFonts.bodyMedium,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
-  metricStrip: {
-    flexDirection: 'row',
-    gap: 8,
+  metricStack: {
+    gap: 12,
   },
   metricCell: {
-    flex: 1,
-    borderRadius: 12,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    alignItems: 'flex-start',
   },
   metricValue: {
     color: lumina.onSurface,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
   },
   metricLabel: {
-    marginTop: 2,
-    textAlign: 'center',
+    marginTop: 4,
   },
   visitReadinessFocused: {
-    borderLeftWidth: 3,
-    borderLeftColor: lumina.primary,
+    backgroundColor: 'rgba(0, 107, 102, 0.08)',
   },
   rowInner: {
     flexDirection: 'row',

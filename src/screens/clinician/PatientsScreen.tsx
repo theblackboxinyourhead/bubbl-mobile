@@ -100,7 +100,7 @@ export function PatientsScreen({ navigation }: Props) {
   }
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
       <TextInput
         style={luminaStyles.input}
         value={search}
@@ -204,8 +204,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 4,
     backgroundColor: 'transparent',
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: lumina.outlineVariant,
     minWidth: 118,
   },
 })

@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react'
-import { ActivityIndicator, ScrollView, Text, View, Pressable, StyleSheet } from 'react-native'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated'
+import { LoadingState } from '@/screens/shared/ScreenState'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type AuthShellProps = {
   title: string
@@ -30,69 +36,106 @@ export function AuthShell({
   const showToggle = typeof onToggleMode === 'function' && typeof isSignIn === 'boolean'
   const showSocialSection = socialSlot !== undefined
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
-        <View style={styles.headerRow}>
-          {onBackToRoles ? (
-            <Pressable
-              style={[styles.back, loading ? styles.disabled : undefined]}
-              onPress={onBackToRoles}
-              disabled={loading === true}
-            >
-              <Text style={styles.backText}>Back</Text>
-            </Pressable>
+    <View style={styles.root}>
+      <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={styles.wrap}>
+        <View style={luminaStyles.stage}>
+          <View style={styles.headerRow}>
+            {onBackToRoles ? (
+              <SpringPressable
+                style={[styles.back, loading ? styles.disabled : undefined]}
+                onPress={() => {
+                  onBackToRoles()
+                }}
+                disabled={loading === true}
+              >
+                <Text style={styles.backText}>Back</Text>
+              </SpringPressable>
+            ) : null}
+            <Text style={styles.title}>{title}</Text>
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          </View>
+
+          {loading ? <LoadingState label="Please wait…" /> : null}
+
+          {error ? <Text style={luminaStyles.errorText}>{error}</Text> : null}
+
+          {showSocialSection ? (
+            <>
+              <View pointerEvents={loading ? 'none' : 'auto'}>{socialSlot}</View>
+              <View style={styles.separatorPill}>
+                <Text style={styles.separatorText}>or continue with email</Text>
+              </View>
+            </>
           ) : null}
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        </View>
 
-        {loading ? (
-          <View style={styles.loadingBlock}>
-            <ActivityIndicator color={lumina.primary} />
-            <Text style={styles.loadingText}>Please wait…</Text>
-          </View>
-        ) : null}
+          <View pointerEvents={loading ? 'none' : 'auto'}>{emailSlot}</View>
 
-        {error ? <Text style={luminaStyles.errorText}>{error}</Text> : null}
-
-        {showSocialSection ? (
-          <>
-            <View pointerEvents={loading ? 'none' : 'auto'}>{socialSlot}</View>
-            <View style={styles.separatorPill}>
-              <Text style={styles.separatorText}>or continue with email</Text>
-            </View>
-          </>
-        ) : null}
-
-        <View pointerEvents={loading ? 'none' : 'auto'}>{emailSlot}</View>
-
-        {showToggle ? (
-          <View style={styles.modeRow}>
-            <Text style={styles.modeText}>{isSignIn ? 'Need an account?' : 'Already have an account?'}</Text>
-            <Pressable onPress={onToggleMode} disabled={loading === true}>
-              <Text style={[styles.modeToggle, loading ? styles.disabled : undefined]}>
-                {isSignIn ? 'Create account' : 'Sign in'}
+          {showToggle ? (
+            <View style={styles.modeRow}>
+              <Text style={styles.modeText}>
+                {isSignIn ? 'Need an account?' : 'Already have an account?'}
               </Text>
-            </Pressable>
-          </View>
-        ) : null}
+              <SpringPressable
+                onPress={() => {
+                  onToggleMode()
+                }}
+                disabled={loading === true}
+              >
+                <Text style={[styles.modeToggle, loading ? styles.disabled : undefined]}>
+                  {isSignIn ? 'Create account' : 'Sign in'}
+                </Text>
+              </SpringPressable>
+            </View>
+          ) : null}
 
-        {footerSlot}
-      </View>
-    </ScrollView>
+          {footerSlot}
+        </View>
+      </ScrollView>
+    </View>
+  )
+}
+
+function SpringPressable({
+  children,
+  disabled,
+  onPress,
+  style,
+}: {
+  children: ReactNode
+  disabled?: boolean
+  onPress: () => void
+  style?: import('react-native').StyleProp<import('react-native').ViewStyle>
+}) {
+  const scale = useSharedValue(1)
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }))
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        style={style}
+        disabled={disabled}
+        onPressIn={() => {
+          scale.value = withSpring(0.98, { stiffness: 300, damping: 30 })
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { stiffness: 300, damping: 30 })
+        }}
+        onPress={onPress}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
   )
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    padding: 16,
-    paddingBottom: 28,
+  root: {
+    flex: 1,
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
+  wrap: {
     padding: 18,
-    gap: 14,
+    paddingBottom: 32,
   },
   headerRow: {
     gap: 6,
@@ -106,27 +149,19 @@ const styles = StyleSheet.create({
   },
   backText: {
     color: lumina.onSurfaceVariant,
-    fontWeight: '700',
+    fontFamily: luminaFonts.bodySemi,
     fontSize: 14,
   },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   subtitle: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
-  },
-  loadingBlock: {
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-  },
-  loadingText: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 13,
+    fontFamily: luminaFonts.body,
   },
   separatorPill: {
     alignSelf: 'center',
@@ -138,6 +173,7 @@ const styles = StyleSheet.create({
   separatorText: {
     color: lumina.onSurfaceVariant,
     fontSize: 13,
+    fontFamily: luminaFonts.body,
   },
   modeRow: {
     flexDirection: 'row',
@@ -148,11 +184,12 @@ const styles = StyleSheet.create({
   modeText: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
+    fontFamily: luminaFonts.body,
   },
   modeToggle: {
     color: lumina.primary,
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: luminaFonts.bodySemi,
   },
   disabled: {
     opacity: 0.6,

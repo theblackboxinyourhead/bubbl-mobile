@@ -9,7 +9,6 @@ import {
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack'
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native'
-import { StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { InviteEntryScreen } from '@/screens/patient/InviteEntryScreen'
 import { WebFallbackScreen } from '@/screens/patient/WebFallbackScreen'
@@ -112,18 +111,15 @@ const RootStack = createNativeStackNavigator<RootStackParamList>()
 const authenticatedHeaderBackground = lumina.surfaceLowest
 const authenticatedHeaderTitleColor = lumina.onSurface
 const authenticatedHeaderTintColor = lumina.primary
-const authenticatedHeaderShadowColor = lumina.outlineVariant
-const authenticatedHeaderShadowVisible = true
+const authenticatedHeaderShadowVisible = false
 const authenticatedDetailHeaderStyle = {
   backgroundColor: authenticatedHeaderBackground,
-  shadowColor: authenticatedHeaderShadowColor,
 }
 
 function buildAuthenticatedTabHeaderOptions(): BottomTabNavigationOptions {
   return {
     headerStyle: {
       backgroundColor: authenticatedHeaderBackground,
-      shadowColor: authenticatedHeaderShadowColor,
     },
     headerTitleStyle: {
       color: authenticatedHeaderTitleColor,
@@ -142,8 +138,8 @@ function buildAuthenticatedTabBarOptions(): Pick<
   return {
     tabBarStyle: {
       backgroundColor: lumina.surfaceLowest,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: lumina.outlineVariant,
+      borderTopWidth: 0,
+      elevation: 0,
     },
     tabBarItemStyle: {
       paddingVertical: 4,
@@ -188,6 +184,7 @@ function clinicianTabIcon(
 function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | void }) {
   return (
     <PatientTab.Navigator
+      sceneContainerStyle={{ backgroundColor: 'transparent' }}
       screenOptions={({ route }) => ({
         ...buildAuthenticatedTabHeaderOptions(),
         ...buildAuthenticatedTabBarOptions(),
@@ -218,6 +215,7 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
 function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | void }) {
   return (
     <ClinicianTab.Navigator
+      sceneContainerStyle={{ backgroundColor: 'transparent' }}
       screenOptions={({ route }) => ({
         ...buildAuthenticatedTabHeaderOptions(),
         ...buildAuthenticatedTabBarOptions(),
@@ -270,7 +268,11 @@ export function PatientNavigator({
   return (
     <PatientStack.Navigator
       initialRouteName={initial ?? 'PatientAuthEntry'}
-      screenOptions={{ headerShown: true }}
+      screenOptions={{
+        headerShown: true,
+        contentStyle: { backgroundColor: 'transparent' },
+        animation: 'fade',
+      }}
     >
       <PatientStack.Screen
         name="PatientAuthEntry"
@@ -321,7 +323,11 @@ export function ClinicianNavigator({
   return (
     <ClinicianStack.Navigator
       initialRouteName={initial ?? 'ClinicianAuthEntry'}
-      screenOptions={{ headerShown: true }}
+      screenOptions={{
+        headerShown: true,
+        contentStyle: { backgroundColor: 'transparent' },
+        animation: 'fade',
+      }}
     >
       <ClinicianStack.Screen name="ClinicianAuthEntry" options={{ title: 'Clinician authentication' }}>
         {(props) => <LoginScreen {...props} onBackToRoles={onBackToRoles} bootstrapError={bootstrapError} />}
@@ -418,7 +424,13 @@ export function RootNavigator({
   bootstrapAuthError?: string | null
 }) {
   return (
-    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+    <RootStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: 'transparent' },
+        animation: 'fade',
+      }}
+    >
       {mode === 'launch' ? (
         <RootStack.Screen name="LaunchChoice">
           {() => (
