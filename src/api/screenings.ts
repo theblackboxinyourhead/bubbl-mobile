@@ -185,10 +185,59 @@ export async function completeScreening(screeningId: string) {
   return parsed.data
 }
 
-export async function listScreeningsForClinician() {
-  const raw = await apiJson<unknown[]>('/api/screenings')
-  if (!Array.isArray(raw)) return []
-  return raw.map(mapQueueItem).filter((item): item is ClinicianScreeningQueueItem => item != null)
+export type ListScreeningsOptions = {
+  limit?: number
+  offset?: number
+  status?: string
+  search?: string
+}
+
+export type PaginatedScreeningsResponse = {
+  items: ClinicianScreeningQueueItem[]
+  nextOffset: number | null
+  hasMore: boolean
+}
+
+export async function listScreeningsForClinician(): Promise<ClinicianScreeningQueueItem[]>
+export async function listScreeningsForClinician(options: ListScreeningsOptions): Promise<PaginatedScreeningsResponse>
+export async function listScreeningsForClinician(
+  options?: ListScreeningsOptions
+): Promise<ClinicianScreeningQueueItem[] | PaginatedScreeningsResponse> {
+  if (options === undefined) {
+    const raw = await apiJson<unknown[]>('/api/screenings')
+    if (!Array.isArray(raw)) return []
+    return raw.map(mapQueueItem).filter((item): item is ClinicianScreeningQueueItem => item != null)
+  }
+
+  const params = new URLSearchParams()
+  if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+    params.set('limit', String(options.limit))
+  }
+  if (typeof options.offset === 'number' && Number.isFinite(options.offset)) {
+    params.set('offset', String(options.offset))
+  }
+  if (typeof options.status === 'string' && options.status.length > 0) {
+    params.set('status', options.status)
+  }
+  if (typeof options.search === 'string' && options.search.length > 0) {
+    params.set('search', options.search)
+  }
+  if (!params.has('limit') && !params.has('offset')) {
+    params.set('offset', '0')
+  }
+
+  const qs = params.toString()
+  const raw = await apiJson<{ items?: unknown[]; nextOffset?: number | null; hasMore?: boolean }>(
+    `/api/screenings${qs ? `?${qs}` : ''}`
+  )
+  const items = Array.isArray(raw?.items)
+    ? raw.items.map(mapQueueItem).filter((item): item is ClinicianScreeningQueueItem => item != null)
+    : []
+  return {
+    items,
+    nextOffset: raw?.nextOffset ?? null,
+    hasMore: Boolean(raw?.hasMore),
+  }
 }
 
 export async function scribeStart(screeningId: string, sessionId?: string) {

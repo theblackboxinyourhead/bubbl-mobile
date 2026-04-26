@@ -30,6 +30,7 @@ import {
   isSupportedDashboardAction,
 } from '@/screens/clinician/dashboardActions'
 import { ErrorState, LoadingState, EmptyState } from '@/screens/shared/ScreenState'
+import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'ClinicianHome'>
@@ -44,11 +45,34 @@ type ActionRow = {
   screeningId?: string
   patientId?: string
   tone?: 'attention' | 'ready' | 'neutral'
+  chipLabel?: string
+  chipTone?: SummaryBadgeTone
 }
 
 function needsAttentionTone(severity: NeedsAttentionItem['severity']): ActionRow['tone'] {
   if (severity === 'follow-up') return 'neutral'
   return 'attention'
+}
+
+function needsAttentionBadgeTone(severity: NeedsAttentionItem['severity']): SummaryBadgeTone {
+  if (severity === 'urgent') return 'urgency-high'
+  if (severity === 'needs review') return 'badge-yellow'
+  if (severity === 'pending') return 'badge-yellow'
+  if (severity === 'follow-up') return 'badge-yellow'
+  return 'neutral'
+}
+
+function elapsedShort(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const time = new Date(iso).getTime()
+  if (Number.isNaN(time)) return ''
+  const ms = Math.max(0, Date.now() - time)
+  const m = Math.max(1, Math.round(ms / 60000))
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.round(h / 24)
+  return `${d}d ago`
 }
 
 function visitReadinessTone(bucket: VisitReadinessItem['readinessBucket']): ActionRow['tone'] {
@@ -203,11 +227,13 @@ export function HomeScreen({ navigation, route }: Props) {
     .map((item) => ({
       id: item.id,
       title: item.title,
-      subtitle: `${item.subtitle} (${item.severity})`,
+      subtitle: elapsedShort(item.occurredAtISO) || item.subtitle,
       action: item.cta?.action,
       screeningId: item.screeningId,
       patientId: item.patientId,
       tone: needsAttentionTone(item.severity),
+      chipLabel: item.subtitle,
+      chipTone: needsAttentionBadgeTone(item.severity),
     }))
 
   const visitReadinessRowsAll: ActionRow[] = visitReadiness
@@ -377,6 +403,11 @@ function Section({
               <View style={[luminaStyles.statusDot, toneDotStyle(row.tone)]} />
               <View style={styles.rowTextCol}>
                 <Text style={luminaStyles.rowTitleStrong}>{row.title}</Text>
+                {row.chipLabel ? (
+                  <View style={styles.rowChipRow}>
+                    <SummaryBadge tone={row.chipTone ?? 'neutral'} label={row.chipLabel} />
+                  </View>
+                ) : null}
                 <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
               </View>
             </View>
@@ -440,7 +471,7 @@ const styles = StyleSheet.create({
   },
   metricCell: {
     flex: 1,
-    minHeight: 96,
+    minHeight: 80,
     padding: 14,
     gap: 6,
     alignItems: 'center',
@@ -448,22 +479,18 @@ const styles = StyleSheet.create({
   },
   metricValue: {
     color: lumina.onSurface,
-    fontSize: 28,
-    lineHeight: 28,
+    fontSize: 56,
     fontFamily: luminaFonts.display,
-    includeFontPadding: false,
     textAlignVertical: 'center',
   },
   metricLabel: {
     color: lumina.onSurfaceVariant,
     fontSize: 11,
-    lineHeight: 14,
     fontFamily: luminaFonts.bodyMedium,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
+    textAlign: 'center',
   },
   visitReadinessFocused: {
-    backgroundColor: 'rgba(0, 107, 102, 0.08)',
+    backgroundColor: lumina.surfaceLowest,
   },
   rowInner: {
     flexDirection: 'row',
@@ -472,5 +499,11 @@ const styles = StyleSheet.create({
   rowTextCol: {
     flex: 1,
     gap: 3,
+  },
+  rowChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
   },
 })

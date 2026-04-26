@@ -44,7 +44,6 @@ import {
   reconcileReminderMetadata,
 } from '@/lib/notifications'
 import { SessionProvider } from '@/lib/session-provider'
-import { AtmosphericBackground } from '@/screens/shared/AtmosphericBackground'
 import { lumina } from '@/screens/shared/lumina'
 import type { PatientStackParamList, ClinicianStackParamList } from '@/navigation/RootNavigator'
 /* eslint-enable import/first */
@@ -548,7 +547,6 @@ export default function App() {
       <SafeAreaProvider>
         <SessionProvider>
           <View style={styles.flex}>
-            <AtmosphericBackground />
             <NavigationContainer
               ref={navigationRef}
               linking={linking}

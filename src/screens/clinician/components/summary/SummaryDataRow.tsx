@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
-import { lumina } from '@/screens/shared/lumina'
+import { lumina, luminaFonts } from '@/screens/shared/lumina'
 
 type Props = {
   label: string
@@ -24,11 +24,11 @@ export function SummaryDataRow({
   if (inline) {
     return (
       <View style={styles.inlineRow}>
-        <Text style={[styles.label, styles.inlineLabel]}>{label}</Text>
+        <Text style={styles.inlineLabel}>{label}</Text>
         {valueNode != null ? (
           <View style={styles.inlineValueNode}>{valueNode}</View>
         ) : (
-          <Text style={[styles.value, styles.inlineValue, emphasize && styles.valueEmphasis]}>
+          <Text style={[styles.inlineValue, emphasize && styles.valueEmphasis]}>
             {displayValue}
           </Text>
         )}
@@ -64,6 +64,9 @@ const styles = StyleSheet.create({
   },
   inlineLabel: {
     flexShrink: 0,
+    color: lumina.onSurfaceVariant,
+    fontSize: 12,
+    fontFamily: luminaFonts.bodyMedium,
   },
   value: {
     color: lumina.onSurface,
@@ -73,6 +76,9 @@ const styles = StyleSheet.create({
   inlineValue: {
     flexShrink: 1,
     flexBasis: 'auto',
+    color: lumina.onSurface,
+    fontSize: 15,
+    fontFamily: luminaFonts.bodySemi,
   },
   inlineValueNode: {
     flexShrink: 1,

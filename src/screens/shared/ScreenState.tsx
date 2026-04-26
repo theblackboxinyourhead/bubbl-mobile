@@ -92,13 +92,13 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     height: 8,
     borderRadius: 999,
-    backgroundColor: 'rgba(109, 74, 179, 0.08)',
+    backgroundColor: '#F0F0F0',
     overflow: 'hidden',
   },
   loadingPulseFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 999,
-    backgroundColor: 'rgba(115, 241, 231, 0.48)',
+    backgroundColor: lumina.primary,
   },
   stateTitle: {
     color: lumina.onSurface,

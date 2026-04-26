@@ -1,11 +1,11 @@
 import { Dimensions, Platform, StyleSheet } from 'react-native'
 
-/** Lavender-tinted floating shadow (iOS); Android uses elevation for depth only. */
+/** Primary-tinted floating shadow (iOS); Android uses elevation for depth only. */
 const ambientShadow = Platform.select({
   ios: {
-    shadowColor: '#6d4ab3',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.07,
+    shadowColor: '#006B66',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
     shadowRadius: 24,
   },
   android: { elevation: 4 },
@@ -14,18 +14,18 @@ const ambientShadow = Platform.select({
 
 const ambientShadowSoft = Platform.select({
   ios: {
-    shadowColor: '#6d4ab3',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
+    shadowColor: '#006B66',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
   },
   android: { elevation: 2 },
   default: {},
 })
 
 const { width: viewportWidth } = Dimensions.get('window')
-const stageRadius = viewportWidth < 390 ? 34 : 40
-const cardRadius = viewportWidth < 390 ? 22 : 24
+const stageRadius = viewportWidth < 390 ? 20 : 24
+const cardRadius = viewportWidth < 390 ? 16 : 18
 
 export const luminaFonts = {
   display: 'Manrope_700Bold',
@@ -37,38 +37,40 @@ export const luminaFonts = {
 
 export const lumina = {
   primary: '#006B66',
-  /** Compatibility alias for surface-container-low (recessed support surface). Not the mint/primary-container token — see primaryFixed. */
-  primaryContainer: '#f1f3f9',
+  /** Phase 4 pale mint container. Use primaryFixed for the canonical mint highlight token. */
+  primaryContainer: '#EAF4F3',
   /** Canonical mint token for style-guide primary-container / primary-fixed. */
   primaryFixed: '#73f1e7',
-  secondary: '#6d4ab3',
-  secondaryContainer: '#eaddff',
-  onSecondaryContainer: '#5f3ca4',
+  secondary: '#006B66',
+  secondaryContainer: '#EAF4F3',
+  onSecondaryContainer: '#006B66',
   tertiaryContainer: '#c4e3e3',
   onTertiaryContainer: '#375354',
   onPrimaryContainer: '#005854',
   errorContainer: '#f56965',
   onError: '#fff7f6',
-  surface: '#f8f9fe',
-  surfaceLow: '#f1f3f9',
-  surfaceContainer: '#ebeef5',
-  surfaceHigh: '#e4e8f0',
+  surface: '#FAFAFA',
+  surfaceLow: '#FFFFFF',
+  surfaceContainer: '#FFFFFF',
+  surfaceHigh: '#FFFFFF',
   /** surface-container-highest */
-  surfaceHighest: '#dee3ec',
+  surfaceHighest: '#FFFFFF',
   /** surface-container-lowest */
-  surfaceLowest: '#ffffff',
+  surfaceLowest: '#FFFFFF',
   /** surface-variant equals surface-container-highest per the style guide */
-  surfaceVariant: '#dee3ec',
-  surfaceDim: '#d4dae4',
+  surfaceVariant: '#FFFFFF',
+  surfaceDim: '#F5F5F5',
   onSurface: '#2d333a',
   onSurfaceVariant: '#5a5f67',
   outline: '#767b83',
-  outlineVariant: '#adb2bb',
+  outlineVariant: '#E5E5E5',
   error: '#ac3434',
   onPrimary: '#ffffff',
+  /** Vibrant emerald used ONLY for shadows under primary buttons. Never used as a text background. */
+  primaryGlow: '#10B981',
   statusDotAttention: '#F59E0B',
   statusDotReady: '#006B66',
-  statusDotNeutral: '#adb2bb',
+  statusDotNeutral: '#006B66',
 }
 
 export const luminaStyles = StyleSheet.create({
@@ -94,19 +96,19 @@ export const luminaStyles = StyleSheet.create({
   },
   sectionFlat: {
     borderRadius: cardRadius,
-    backgroundColor: 'rgba(255, 255, 255, 0.86)',
+    backgroundColor: '#FFFFFF',
     padding: 14,
     gap: 12,
     ...ambientShadowSoft,
   },
   sectionHeader: {
     color: lumina.onSurface,
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: luminaFonts.displaySemi,
   },
   listRowCompact: {
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 12,
     paddingHorizontal: 14,
     gap: 4,
@@ -161,7 +163,7 @@ export const luminaStyles = StyleSheet.create({
   },
   actionTintedButton: {
     borderRadius: 999,
-    backgroundColor: lumina.primaryContainer,
+    backgroundColor: '#EAF4F3',
     paddingVertical: 10,
     paddingHorizontal: 14,
     alignItems: 'center',
@@ -174,7 +176,7 @@ export const luminaStyles = StyleSheet.create({
   },
   actionTintedPill: {
     borderRadius: 999,
-    backgroundColor: lumina.primaryContainer,
+    backgroundColor: '#EAF4F3',
     paddingVertical: 6,
     paddingHorizontal: 10,
     minHeight: 32,
@@ -182,7 +184,7 @@ export const luminaStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   pressedRow: {
-    backgroundColor: lumina.surfaceLow,
+    backgroundColor: '#EAF4F3',
     transform: [{ scale: 0.98 }],
   },
   pressedButton: {
@@ -190,7 +192,7 @@ export const luminaStyles = StyleSheet.create({
   },
   stage: {
     borderRadius: stageRadius,
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    backgroundColor: '#FFFFFF',
     padding: 20,
     gap: 14,
     overflow: 'hidden',
@@ -198,7 +200,7 @@ export const luminaStyles = StyleSheet.create({
   },
   card: {
     borderRadius: cardRadius,
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    backgroundColor: '#FFFFFF',
     padding: 18,
     gap: 12,
     overflow: 'hidden',
@@ -206,7 +208,7 @@ export const luminaStyles = StyleSheet.create({
   },
   title: {
     color: lumina.onSurface,
-    fontSize: 26,
+    fontSize: 32,
     fontFamily: luminaFonts.display,
   },
   subtitle: {
@@ -222,19 +224,43 @@ export const luminaStyles = StyleSheet.create({
   },
   input: {
     borderRadius: 16,
-    backgroundColor: lumina.surface,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 14,
     paddingVertical: 12,
     color: lumina.onSurface,
     fontFamily: luminaFonts.body,
   },
+  inputFocused: {
+    borderWidth: 2,
+    borderColor: lumina.primary,
+    ...Platform.select({
+      ios: {
+        shadowColor: lumina.primary,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.18,
+        shadowRadius: 6,
+      },
+      android: {},
+      default: {},
+    }),
+  },
   primaryButton: {
     borderRadius: 999,
     backgroundColor: lumina.primary,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: lumina.primaryGlow,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.50,
+        shadowRadius: 24,
+      },
+      android: { elevation: 12 },
+      default: {},
+    }),
   },
   primaryButtonDisabled: {
     opacity: 0.6,
@@ -246,7 +272,7 @@ export const luminaStyles = StyleSheet.create({
   },
   secondaryButton: {
     borderRadius: 999,
-    backgroundColor: lumina.secondaryContainer,
+    backgroundColor: '#EAF4F3',
     paddingVertical: 13,
     paddingHorizontal: 16,
     alignItems: 'center',

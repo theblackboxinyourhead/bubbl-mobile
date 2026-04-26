@@ -44,42 +44,30 @@ export function SummaryBadge({ label, tone = 'neutral' }: Props) {
   )
 }
 
-const ALLERGY_CHIP_BG = 'rgba(245, 105, 101, 0.15)'
-
-const BADGE_GREEN_BG = '#f0fdf4'
-const BADGE_GREEN_FG = '#16a34a'
-const BADGE_BLUE_BG = '#eff6ff'
-const BADGE_BLUE_FG = '#2563eb'
-const BADGE_RED_BG = 'rgba(172, 52, 52, 0.12)'
-const BADGE_YELLOW_BG = '#fefce8'
-const BADGE_YELLOW_FG = '#ca8a04'
-const BADGE_INDIGO_BG = '#eef2ff'
-const BADGE_INDIGO_FG = '#3730a3'
-const BADGE_TEAL_BG = '#f0fdfa'
-const BADGE_TEAL_FG = '#115e59'
-const BADGE_CANCELLED_FG = '#6b7280'
+const CHIP_BG = '#EAF4F3'
+const CHIP_FG = '#006B66'
 
 type ToneStyle = { bg: string; fg: string; lineThrough?: boolean }
 
 const TONE_STYLES: Record<SummaryBadgeTone, ToneStyle> = {
-  neutral: { bg: lumina.surfaceContainer, fg: lumina.onSurface },
-  'urgency-high': { bg: lumina.surfaceContainer, fg: lumina.error },
-  'urgency-medium': { bg: lumina.surfaceContainer, fg: lumina.statusDotAttention },
-  'urgency-low': { bg: lumina.primaryContainer, fg: lumina.primary },
-  'confidence-high': { bg: lumina.primaryContainer, fg: lumina.primary },
-  'confidence-medium': { bg: lumina.surfaceContainer, fg: lumina.statusDotAttention },
-  'medical-condition': { bg: lumina.tertiaryContainer, fg: lumina.onTertiaryContainer },
-  'medical-medication': { bg: lumina.secondaryContainer, fg: lumina.onSecondaryContainer },
-  'medical-allergy': { bg: ALLERGY_CHIP_BG, fg: lumina.error },
-  'badge-green': { bg: BADGE_GREEN_BG, fg: BADGE_GREEN_FG },
-  'badge-gray': { bg: lumina.surfaceContainer, fg: lumina.onSurfaceVariant },
-  'badge-blue': { bg: BADGE_BLUE_BG, fg: BADGE_BLUE_FG },
-  'badge-red': { bg: BADGE_RED_BG, fg: lumina.error },
-  'badge-yellow': { bg: BADGE_YELLOW_BG, fg: BADGE_YELLOW_FG },
-  'badge-cancelled': { bg: lumina.surfaceContainer, fg: BADGE_CANCELLED_FG, lineThrough: true },
-  'badge-indigo': { bg: BADGE_INDIGO_BG, fg: BADGE_INDIGO_FG },
-  'badge-teal': { bg: BADGE_TEAL_BG, fg: BADGE_TEAL_FG },
-  'badge-secondary': { bg: lumina.secondaryContainer, fg: lumina.onSecondaryContainer },
+  neutral: { bg: CHIP_BG, fg: CHIP_FG },
+  'urgency-high': { bg: '#FEE2E2', fg: '#991B1B' },
+  'urgency-medium': { bg: '#FEF3C7', fg: '#854D0E' },
+  'urgency-low': { bg: CHIP_BG, fg: CHIP_FG },
+  'confidence-high': { bg: CHIP_BG, fg: CHIP_FG },
+  'confidence-medium': { bg: '#FEF3C7', fg: '#854D0E' },
+  'medical-condition': { bg: CHIP_BG, fg: CHIP_FG },
+  'medical-medication': { bg: CHIP_BG, fg: CHIP_FG },
+  'medical-allergy': { bg: '#FEE2E2', fg: '#991B1B' },
+  'badge-green': { bg: CHIP_BG, fg: CHIP_FG },
+  'badge-gray': { bg: '#F3F4F6', fg: '#374151' },
+  'badge-blue': { bg: '#E0F2FE', fg: '#1E40AF' },
+  'badge-red': { bg: '#FEE2E2', fg: '#991B1B' },
+  'badge-yellow': { bg: '#FEF3C7', fg: '#854D0E' },
+  'badge-cancelled': { bg: '#F3F4F6', fg: '#374151', lineThrough: true },
+  'badge-indigo': { bg: CHIP_BG, fg: CHIP_FG },
+  'badge-teal': { bg: CHIP_BG, fg: CHIP_FG },
+  'badge-secondary': { bg: CHIP_BG, fg: CHIP_FG },
 }
 
 const styles = StyleSheet.create({

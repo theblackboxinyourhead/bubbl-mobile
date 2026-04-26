@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
 import {
@@ -9,7 +10,10 @@ import {
 } from '@/api/clinicians'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
+import { SummaryDataRow } from '@/screens/clinician/components/summary/SummaryDataRow'
+import { SummarySectionCard } from '@/screens/clinician/components/summary/SummarySectionCard'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'PatientProfile'>
 
@@ -41,7 +45,7 @@ function deriveMedicalHistoryGroups(medicalHistory: unknown): MedicalHistoryGrou
   const buildLines = (items: unknown, labelKeys: string[]): string[] => {
     if (!Array.isArray(items)) return []
     return items
-      .slice(0, 8)
+      .slice(0, 12)
       .map((item) => {
         if (!item || typeof item !== 'object') return null
         const row = item as Record<string, unknown>
@@ -92,6 +96,41 @@ function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
   return luminaStyles.statusDotNeutral
 }
 
+function medicalGroupBadgeTone(title: string): SummaryBadgeTone {
+  if (title === 'Conditions') return 'medical-condition'
+  if (title === 'Medications') return 'medical-medication'
+  if (title === 'Allergies') return 'medical-allergy'
+  return 'neutral'
+}
+
+function screeningStatusBadgeTone(raw: string): SummaryBadgeTone {
+  const s = raw.trim().toLowerCase()
+  if (s === 'completed') return 'badge-green'
+  if (s === 'sent') return 'badge-gray'
+  if (s === 'in review') return 'badge-blue'
+  if (s === 'error') return 'badge-red'
+  if (s === 'cancelled') return 'badge-cancelled'
+  if (s === 'processing') return 'badge-yellow'
+  return 'neutral'
+}
+
+function screeningTypeBadgeTone(raw: string | null): SummaryBadgeTone {
+  if (!raw) return 'neutral'
+  const s = raw.trim().toLowerCase()
+  if (s === 'web') return 'badge-indigo'
+  if (s === 'phone') return 'badge-teal'
+  return 'neutral'
+}
+
+function urgencyBadgeTone(label: string | null): SummaryBadgeTone {
+  if (!label) return 'neutral'
+  const s = label.trim().toLowerCase()
+  if (s.includes('high')) return 'urgency-high'
+  if (s.includes('medium')) return 'urgency-medium'
+  if (s.includes('low')) return 'urgency-low'
+  return 'neutral'
+}
+
 export function PatientProfileScreen({ route, navigation }: Props) {
   const { patientId } = route.params
   const [loading, setLoading] = useState(true)
@@ -134,140 +173,192 @@ export function PatientProfileScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
-        <Text style={styles.subtitle}>Identity, screenings, and visits.</Text>
+      <Text style={styles.subtitle}>Identity, screenings, and visits.</Text>
 
-        {loading ? <LoadingState label="Loading patient profile..." /> : null}
-        {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
+      {loading ? <LoadingState label="Loading patient profile..." /> : null}
+      {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
 
-        {!loading && !error && profile ? (
-          <>
-            <SegmentedControl
-              tabs={PROFILE_TABS}
-              activeKey={activeTab}
-              onChange={setActiveTab}
-              fullWidth
-              accessibilityLabel="Patient profile sections"
-            />
+      {!loading && !error && profile ? (
+        <>
+          <SegmentedControl
+            tabs={PROFILE_TABS}
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            fullWidth
+            accessibilityLabel="Patient profile sections"
+          />
 
-            {activeTab === 'overview' ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>{profile.fullName}</Text>
-                <Text style={styles.cardBody}>Phone: {profile.phone || 'Not available'}</Text>
-                <Text style={styles.cardBody}>Email: {profile.email || 'Not available'}</Text>
-                <Text style={styles.cardBody}>
-                  Medical history required: {profile.requireMedicalHistory ? 'Yes' : 'No'}
-                </Text>
-                <Text style={styles.cardBody}>Screenings: {profile.screenings.length}</Text>
+          {activeTab === 'overview' ? (
+            <SummarySectionCard title="Identity" icon="person-outline">
+              <SummaryDataRow inline label="Name" value={profile.fullName} emphasize />
+              <SummaryDataRow
+                inline
+                label="Phone"
+                value={profile.phone}
+                valueNode={profile.phone ? undefined : <Text style={styles.inlineEmpty}>—</Text>}
+              />
+              <SummaryDataRow
+                inline
+                label="Email"
+                value={profile.email}
+                valueNode={profile.email ? undefined : <Text style={styles.inlineEmpty}>—</Text>}
+              />
+              <SummaryDataRow inline label="Screenings" value={String(profile.screenings.length)} />
 
+              <View style={styles.summaryHeaderRow}>
                 <Text style={[styles.sectionTitle, styles.summaryHeading]}>Medical history summary</Text>
-                {medicalGroups.every((group) => group.lines.length === 0) ? (
-                  <EmptyState title="No medical history" body="This patient has not submitted medical history yet." />
-                ) : (
-                  medicalGroups.map((group) => (
-                    <View key={group.title} style={styles.section}>
-                      <Text style={styles.sectionTitle}>{group.title}</Text>
-                      {group.lines.length === 0 ? (
-                        <Text style={styles.cardBody}>None recorded.</Text>
-                      ) : (
-                        group.lines.map((line, index) => (
-                          <Text key={`${group.title}-${index}`} style={styles.cardBody}>
-                            {line}
-                          </Text>
-                        ))
-                      )}
-                    </View>
-                  ))
-                )}
+                <SummaryBadge
+                  tone="neutral"
+                  label={profile.requireMedicalHistory ? 'Required' : 'Optional'}
+                />
               </View>
-            ) : null}
+              {medicalGroups.every((group) => group.lines.length === 0) ? (
+                <EmptyState title="No medical history" body="This patient has not submitted medical history yet." />
+              ) : (
+                medicalGroups.map((group, index) => (
+                  <View
+                    key={group.title}
+                    style={[styles.medicalGroup, index > 0 && styles.medicalGroupDivider]}
+                  >
+                    <Text style={styles.sectionTitle}>{group.title}</Text>
+                    {group.lines.length === 0 ? (
+                      <Text style={styles.inlineEmpty}>None on file</Text>
+                    ) : (
+                      <View style={styles.chipCloud}>
+                        {group.lines.map((line, i) => (
+                          <SummaryBadge
+                            key={`${group.title}-${i}`}
+                            tone={medicalGroupBadgeTone(group.title)}
+                            label={line}
+                          />
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                ))
+              )}
+            </SummarySectionCard>
+          ) : null}
 
-            {activeTab === 'history' ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Screening history</Text>
-                {screeningRows.length === 0 ? (
-                  <EmptyState title="No screenings yet" body="Screenings will appear here once they are sent." />
-                ) : (
-                  screeningRows.map((screening) => (
-                    <ScreeningRow
-                      key={screening.id}
-                      item={screening}
-                      onOpenSummary={() =>
+          {activeTab === 'history' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Screening history</Text>
+              {screeningRows.length === 0 ? (
+                <EmptyState title="No screenings yet" body="Screenings will appear here once they are sent." />
+              ) : (
+                screeningRows.map((screening, index) => (
+                  <ScreeningRow
+                    key={screening.id}
+                    item={screening}
+                    isLast={index === screeningRows.length - 1}
+                    onOpenSummary={() =>
+                      navigation.navigate('ClinicianScreeningDetail', {
+                        screeningId: screening.id,
+                        initialTab: 'summary',
+                      })
+                    }
+                  />
+                ))
+              )}
+            </View>
+          ) : null}
+
+          {activeTab === 'visits' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Visit history</Text>
+              {visitRows.length === 0 ? (
+                <EmptyState title="No visit history yet" body="Visit artifacts will appear here once available." />
+              ) : (
+                visitRows.map((screening, index) => {
+                  const fallback = screening.completedAt ?? screening.startedAt ?? screening.sentAt
+                  const when = fallback ? formatWhen(fallback) : 'Visit pending'
+                  return (
+                    <Pressable
+                      key={`visit-${screening.id}`}
+                      style={({ pressed }) => [
+                        styles.row,
+                        index < visitRows.length - 1 && styles.rowDivider,
+                        pressed && luminaStyles.pressedRow,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        fallback ? `Open visit workspace from ${when}` : 'Open visit workspace, visit pending'
+                      }
+                      onPress={() =>
                         navigation.navigate('ClinicianScreeningDetail', {
                           screeningId: screening.id,
-                          initialTab: 'summary',
+                          initialTab: 'scribe',
                         })
                       }
-                    />
-                  ))
-                )}
-              </View>
-            ) : null}
-
-            {activeTab === 'visits' ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Visit history</Text>
-                {visitRows.length === 0 ? (
-                  <EmptyState title="No visit history yet" body="Visit artifacts will appear here once available." />
-                ) : (
-                  visitRows.map((screening) => (
-                    <View key={`visit-${screening.id}`} style={styles.section}>
-                      <View style={styles.visitTitleRow}>
-                        <View style={[luminaStyles.statusDot, toneDotStyle(visitRowTone(screening))]} />
-                        <Text style={luminaStyles.rowTitleStrong}>
-                          {formatWhen(screening.completedAt ?? screening.startedAt)}
+                    >
+                      <View style={styles.rowHeader}>
+                        <View style={styles.rowHeaderLeft}>
+                          <View style={[luminaStyles.statusDot, toneDotStyle(visitRowTone(screening))]} />
+                          <Text style={luminaStyles.rowTitleStrong}>{when}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+                      </View>
+                      <View style={styles.chipCloud}>
+                        <SummaryBadge tone="neutral" label={screening.scribeStatus ?? 'Not started'} />
+                      </View>
+                      <View style={styles.rowPreviewContainer}>
+                        <Text style={styles.rowPreview} numberOfLines={2}>
+                          {screening.visitSummary ? screening.visitSummary : 'No visit summary yet.'}
                         </Text>
                       </View>
-                      <Text style={styles.cardBody}>Scribe status: {screening.scribeStatus ?? 'Not started'}</Text>
-                      <Text style={styles.cardBody} numberOfLines={2}>
-                        Visit summary: {screening.visitSummary ? screening.visitSummary : 'No visit summary yet.'}
-                      </Text>
-                      <Pressable
-                        style={({ pressed }) => [
-                          luminaStyles.primaryButton,
-                          pressed && luminaStyles.pressedButton,
-                        ]}
-                        onPress={() =>
-                          navigation.navigate('ClinicianScreeningDetail', {
-                            screeningId: screening.id,
-                            initialTab: 'scribe',
-                          })
-                        }
-                      >
-                        <Text style={luminaStyles.primaryButtonText}>Open visit workspace</Text>
-                      </Pressable>
-                    </View>
-                  ))
-                )}
-              </View>
-            ) : null}
-          </>
-        ) : null}
-      </View>
+                    </Pressable>
+                  )
+                })
+              )}
+            </View>
+          ) : null}
+        </>
+      ) : null}
     </ScrollView>
   )
 }
 
 function ScreeningRow({
   item,
+  isLast,
   onOpenSummary,
 }: {
   item: ClinicianPatientProfileScreening
+  isLast: boolean
   onOpenSummary: () => void
 }) {
+  const when = formatWhen(item.sentAt)
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{formatWhen(item.sentAt)}</Text>
-      <Text style={styles.cardBody}>Status: {item.status}</Text>
-      <Text style={styles.cardBody}>Type: {item.screeningType ?? 'Unknown'}</Text>
-      <Text style={styles.cardBody}>Urgency: {item.urgencyLabel ?? 'Not set'}</Text>
-      <Text style={styles.cardBody}>
-        Summary: {item.screeningSummary ? item.screeningSummary : 'No summary yet.'}
-      </Text>
-      <Pressable style={luminaStyles.secondaryButton} onPress={onOpenSummary}>
-        <Text style={luminaStyles.secondaryButtonText}>Open summary</Text>
-      </Pressable>
-    </View>
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        !isLast && styles.rowDivider,
+        pressed && luminaStyles.pressedRow,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`Open screening summary from ${when}`}
+      onPress={onOpenSummary}
+    >
+      <View style={styles.rowHeader}>
+        <Text style={luminaStyles.rowTitleStrong}>{when}</Text>
+        <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+      </View>
+      <View style={styles.chipCloud}>
+        <SummaryBadge tone={screeningStatusBadgeTone(item.status)} label={item.status} />
+        <SummaryBadge
+          tone={screeningTypeBadgeTone(item.screeningType)}
+          label={item.screeningType ?? 'Unknown'}
+        />
+        {item.urgencyLabel ? (
+          <SummaryBadge tone={urgencyBadgeTone(item.urgencyLabel)} label={item.urgencyLabel} />
+        ) : null}
+      </View>
+      <View style={styles.rowPreviewContainer}>
+        <Text style={styles.rowPreview} numberOfLines={2}>
+          {item.screeningSummary ? item.screeningSummary : 'No summary yet.'}
+        </Text>
+      </View>
+    </Pressable>
   )
 }
 
@@ -276,11 +367,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
-  },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 16,
     gap: 12,
   },
   subtitle: {
@@ -299,21 +385,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  cardBody: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  section: {
-    borderRadius: 16,
-    backgroundColor: lumina.surface,
-    padding: 10,
-    gap: 6,
-  },
-  visitTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   sectionTitle: {
     color: lumina.onSurface,
     fontSize: 15,
@@ -321,5 +392,58 @@ const styles = StyleSheet.create({
   },
   summaryHeading: {
     marginTop: 8,
+  },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  medicalGroup: {
+    gap: 6,
+  },
+  medicalGroupDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#F0F0F0',
+    paddingTop: 12,
+  },
+  chipCloud: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  inlineEmpty: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 13,
+    fontFamily: luminaFonts.body,
+  },
+  row: {
+    paddingVertical: 12,
+    gap: 6,
+  },
+  rowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F0F0F0',
+  },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rowHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rowPreviewContainer: {
+    backgroundColor: lumina.surfaceDim,
+    borderRadius: 12,
+    padding: 16,
+    gap: 6,
+  },
+  rowPreview: {
+    color: lumina.onSurface,
+    fontSize: 14,
+    lineHeight: 24,
+    fontFamily: luminaFonts.body,
   },
 })

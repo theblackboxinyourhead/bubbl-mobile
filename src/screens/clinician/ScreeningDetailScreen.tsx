@@ -944,8 +944,7 @@ export function ScreeningDetailScreen({ route }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
-        <Text style={styles.title}>Screening workspace</Text>
+      <Text style={styles.title}>Screening workspace</Text>
         <Text style={styles.subtitle}>Summary, scribe, and visit notes.</Text>
 
         {loading ? <ActivityIndicator color={lumina.primary} /> : null}
@@ -1134,7 +1133,6 @@ export function ScreeningDetailScreen({ route }: Props) {
             </Pressable>
           </View>
         ) : null}
-      </View>
     </ScrollView>
   )
 }
@@ -1144,11 +1142,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 32,
-  },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 16,
     gap: 12,
   },
   title: {

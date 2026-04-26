@@ -219,6 +219,57 @@ export async function fetchClinicianPatientProfile(patientId: string): Promise<C
   }
 }
 
-export async function listClinicianPatients() {
-  return apiJson<ClinicianPatientRosterItem[]>('/api/clinicians/patients')
+export type ListClinicianPatientsOptions = {
+  limit?: number
+  offset?: number
+  search?: string
+  sort?: 'name-asc' | 'name-desc' | 'recent'
+}
+
+export type PaginatedClinicianPatientsResponse = {
+  items: ClinicianPatientRosterItem[]
+  nextOffset: number | null
+  hasMore: boolean
+}
+
+export async function listClinicianPatients(): Promise<ClinicianPatientRosterItem[]>
+export async function listClinicianPatients(
+  options: ListClinicianPatientsOptions
+): Promise<PaginatedClinicianPatientsResponse>
+export async function listClinicianPatients(
+  options?: ListClinicianPatientsOptions
+): Promise<ClinicianPatientRosterItem[] | PaginatedClinicianPatientsResponse> {
+  if (options === undefined) {
+    return apiJson<ClinicianPatientRosterItem[]>('/api/clinicians/patients')
+  }
+
+  const params = new URLSearchParams()
+  if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+    params.set('limit', String(options.limit))
+  }
+  if (typeof options.offset === 'number' && Number.isFinite(options.offset)) {
+    params.set('offset', String(options.offset))
+  }
+  if (typeof options.search === 'string' && options.search.length > 0) {
+    params.set('search', options.search)
+  }
+  if (options.sort) {
+    params.set('sort', options.sort)
+  }
+  if (!params.has('limit') && !params.has('offset')) {
+    params.set('offset', '0')
+  }
+
+  const qs = params.toString()
+  const raw = await apiJson<{ items?: unknown[]; nextOffset?: number | null; hasMore?: boolean }>(
+    `/api/clinicians/patients${qs ? `?${qs}` : ''}`
+  )
+  const items = Array.isArray(raw?.items)
+    ? (raw.items as ClinicianPatientRosterItem[])
+    : []
+  return {
+    items,
+    nextOffset: raw?.nextOffset ?? null,
+    hasMore: Boolean(raw?.hasMore),
+  }
 }
