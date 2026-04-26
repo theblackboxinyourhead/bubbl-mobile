@@ -361,7 +361,6 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
         title="Medical profile"
         density="compact"
         icon="medkit-outline"
-        subtitle={asString(detail.patientName) ?? undefined}
       >
         {medicalGroups.map((group) => {
           const tone = medicalBadgeTone(group.key)

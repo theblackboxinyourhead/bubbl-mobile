@@ -215,10 +215,8 @@ export function IntakeQueueScreen({ navigation }: Props) {
             <View style={styles.queueTextCol}>
               <View style={styles.queueRowHeader}>
                 <Text style={luminaStyles.rowTitleStrong}>{row.patientName}</Text>
-                {row.patientPhone ? (
-                  <Text style={styles.phoneMeta} numberOfLines={1}>
-                    {row.patientPhone}
-                  </Text>
+                {row.isUnread ? (
+                  <SummaryBadge tone="badge-blue" label="New" />
                 ) : null}
               </View>
               <Text style={luminaStyles.metaText}>{formatSentAt(row.sentAt)}</Text>
@@ -295,10 +293,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-  },
-  phoneMeta: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 12,
   },
   chipCloud: {
     flexDirection: 'row',

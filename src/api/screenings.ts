@@ -48,6 +48,7 @@ export type ClinicianScreeningQueueItem = {
   status: string
   scribeStatus: string | null
   visitStatus: string | null
+  isUnread: boolean
 }
 
 function asString(value: unknown): string | null {
@@ -88,7 +89,15 @@ function mapQueueItem(raw: unknown): ClinicianScreeningQueueItem | null {
     status: asString(row.status) ?? 'unknown',
     scribeStatus: asString(row.scribeStatus),
     visitStatus: asString(row.visitStatus),
+    isUnread: row.isUnread === true,
   }
+}
+
+export async function markScreeningViewed(screeningId: string): Promise<void> {
+  await apiJson<{ success: true }>(`/api/screenings/${screeningId}/view`, {
+    method: 'POST',
+    body: '{}',
+  })
 }
 
 export async function appendTranscriptWithRetry(

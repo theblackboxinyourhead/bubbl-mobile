@@ -6,6 +6,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
 import {
   fetchScreeningRaw,
+  markScreeningViewed,
   finalizeScreeningVisit,
   scribeRecord,
   scribeStart,
@@ -535,6 +536,7 @@ export function ScreeningDetailScreen({ route }: Props) {
       const me = await fetchAuthMe()
       setCanScribe(me.capabilities.canUseScribeControls)
       const s = await fetchScreeningRaw(screeningId)
+      void markScreeningViewed(screeningId).catch(() => undefined)
       setDetail(s)
       const visit = s.visit && typeof s.visit === 'object'
         ? (s.visit as Record<string, unknown>)
@@ -942,9 +944,11 @@ export function ScreeningDetailScreen({ route }: Props) {
 
   const transcriptReady = scribeChunkRows.length > 0
 
+  const detailTitle = asString(detail?.patientName) ?? 'Screening workspace'
+
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <Text style={styles.title}>Screening workspace</Text>
+      <Text style={styles.title}>{detailTitle}</Text>
         <Text style={styles.subtitle}>Summary, scribe, and visit notes.</Text>
 
         {loading ? <ActivityIndicator color={lumina.primary} /> : null}
