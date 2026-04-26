@@ -37,11 +37,16 @@ export const luminaFonts = {
 
 export const lumina = {
   primary: '#006B66',
-  /** Phase 4 pale mint container. Use primaryFixed for the canonical mint highlight token. */
+  /**
+   * Accent / chip / secondary-tint fill — not a full-page or card “surface” layer.
+   * For palette ownership see `frontend/zdocs_prompting/STYLE_GUIDE.md` (High-Contrast Sanctuary).
+   * Use `primaryFixed` for the luminescent highlight swatch, not for ambient full-bleed backgrounds.
+   */
   primaryContainer: '#EAF4F3',
-  /** Canonical mint token for style-guide primary-container / primary-fixed. */
+  /** Canonical `primary-container` / `primary-fixed` swatch; indicators and compatibility — not a page wash. */
   primaryFixed: '#73f1e7',
   secondary: '#006B66',
+  /** Mint accent container for secondary/tinted actions; pair with on-surface text, not page backgrounds. */
   secondaryContainer: '#EAF4F3',
   onSecondaryContainer: '#006B66',
   tertiaryContainer: '#c4e3e3',
@@ -78,7 +83,7 @@ export const luminaStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: lumina.surface,
   },
-  /** Use over `screen` when a full-screen atmosphere layer provides the base wash. */
+  /** Use when a parent already supplies the page background; prefer solid `screen` (no atmosphere layer). */
   screenTransparent: {
     flex: 1,
     backgroundColor: 'transparent',

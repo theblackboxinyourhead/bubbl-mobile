@@ -12,6 +12,9 @@ type Props = {
   inline?: boolean
 }
 
+/**
+ * Data-row rhythm: `inline` mode uses muted/smaller label + stronger value (see `STYLE_GUIDE.md` data-row typography).
+ */
 export function SummaryDataRow({
   label,
   value,

@@ -87,6 +87,7 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 10,
   },
+  /** Neutral track; animated fill uses `lumina.primary` (not a mint-on-mint pulse). */
   loadingPulseTrack: {
     width: '64%',
     alignSelf: 'center',

@@ -1,6 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native'
-import { lumina } from '@/screens/shared/lumina'
 
+/**
+ * Mobile reference for the semantic status / metadata chip palette. Keep in sync with
+ * `frontend/zdocs_prompting/STYLE_GUIDE.md` and web `frontend/components/ui/badge.tsx` (variant names may differ; meanings align).
+ */
 export type SummaryBadgeTone =
   | 'neutral'
   | 'urgency-high'
