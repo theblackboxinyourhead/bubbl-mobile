@@ -278,19 +278,30 @@ export default function App() {
           await reconcileReminderMetadata(me.user.id).catch(() => undefined)
           const ctx = await loadActiveScreeningContext(me.user.id)
           if (ctx?.screeningId) {
-            try {
-              const s = await fetchScreeningPatient(ctx.screeningId)
-              if (s.status === 'sent' || s.status === 'in review') {
-                if (__DEV__) console.log('[mobile auth] navigation target: PatientTabs (pending intake)')
-                setPatientInitial('PatientTabs')
-                pendingNav.current = { route: 'intake', screeningId: ctx.screeningId, source: ctx.source }
-                setAuthFlushTick(t => t + 1)
-                setReady(true)
-                return
+            const active = me.activeScreenings?.[0]
+            const serverMatchesPersisted =
+              active != null &&
+              active.screeningId === ctx.screeningId &&
+              (active.status === 'sent' || active.status === 'in review')
+
+            if (!serverMatchesPersisted) {
+              console.warn('[mobile auth] clearing stale active screening context', { screeningId: ctx.screeningId })
+              await saveActiveScreeningContext(me.user.id, null)
+            } else {
+              try {
+                const s = await fetchScreeningPatient(ctx.screeningId)
+                if (s.status === 'sent' || s.status === 'in review') {
+                  if (__DEV__) console.log('[mobile auth] navigation target: PatientTabs (pending intake)')
+                  setPatientInitial('PatientTabs')
+                  pendingNav.current = { route: 'intake', screeningId: ctx.screeningId, source: ctx.source }
+                  setAuthFlushTick(t => t + 1)
+                  setReady(true)
+                  return
+                }
+                await saveActiveScreeningContext(me.user.id, null)
+              } catch {
+                await saveActiveScreeningContext(me.user.id, null)
               }
-              await saveActiveScreeningContext(me.user.id, null)
-            } catch {
-              await saveActiveScreeningContext(me.user.id, null)
             }
           }
           if (__DEV__) console.log('[mobile auth] navigation target: PatientTabs')

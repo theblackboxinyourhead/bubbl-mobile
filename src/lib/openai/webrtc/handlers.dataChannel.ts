@@ -110,6 +110,7 @@ export function setupDataChannelHandlers(
       try {
         const raw = typeof (event as { data?: unknown }).data === 'string' ? (event as { data: string }).data : '';
         const data = JSON.parse(raw);
+        const currentStage = stageManager.getStage();
 
       // Track when an AI response begins
       if (data.type === 'response.created') {

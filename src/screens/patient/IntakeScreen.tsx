@@ -162,12 +162,14 @@ export function IntakeScreen({ route, navigation }: Props) {
         }
         const detail = await fetchScreeningPatient(screeningId).catch(() => null)
         const resume = detail?.resumeState
-        const initialPhaseOverride =
+        const initialPhaseOverride: 'medical-history' | 'symptoms' | undefined =
           resume?.currentPhase === 'symptoms'
-            ? ('symptoms' as const)
-            : resume?.currentPhase === 'medical-history'
-              ? ('medical-history' as const)
-              : undefined
+            ? 'symptoms'
+            : resume?.hasStructuredHistory === true
+              ? 'symptoms'
+              : resume?.currentPhase === 'medical-history'
+                ? 'medical-history'
+                : undefined
         const skipMH = shouldSkipMedicalHistory({
           requireMedicalHistory: prompts.requireMedicalHistory ?? true,
           hasSubmittedMedicalHistory: prompts.hasSubmittedMedicalHistory ?? false,
@@ -198,7 +200,7 @@ export function IntakeScreen({ route, navigation }: Props) {
             hasSubmittedMedicalHistory: prompts.hasSubmittedMedicalHistory,
             requireMedicalHistory: prompts.requireMedicalHistory,
             enableVisitContextConfirmUpdate: prompts.enableVisitContextConfirmUpdate,
-            initialPhaseOverride,
+            initialPhaseOverride: resolvedInitialPhase,
             functionSchema: prompts.functionSchema,
           },
           undefined,
@@ -213,18 +215,29 @@ export function IntakeScreen({ route, navigation }: Props) {
         setPhaseLabel(resolvedInitialPhase === 'symptoms' ? 'Live (symptoms)' : 'Live (medical history)')
         startConversation(connection, prompts.initialPrompt)
       } catch (e) {
-        let consentRequired = false
-        if (e instanceof ApiError && e.status === 409) {
+        if (e instanceof ApiError) {
+          let parsed: { code?: string; message?: string; error?: string } = {}
           try {
-            const j = JSON.parse(e.bodyText) as { code?: string }
-            consentRequired = j.code === 'CONSENT_REQUIRED'
+            if (e.bodyText) {
+              parsed = JSON.parse(e.bodyText) as { code?: string; message?: string; error?: string }
+            }
           } catch {
             // ignore
           }
-        }
-        if (consentRequired) {
-          navigation.replace('Consent', { returnTo: 'intake', screeningId, source })
-          return
+          if (e.status === 409) {
+            if (parsed.code === 'CONSENT_REQUIRED') {
+              navigation.replace('Consent', { returnTo: 'intake', screeningId, source })
+              return
+            }
+            if (parsed.code === 'SCREENING_START_CONFLICT') {
+              setError(
+                parsed.message ??
+                  parsed.error ??
+                  'Could not resume this intake. Start a new screening from Home.'
+              )
+              return
+            }
+          }
         }
         setError('Could not start intake.')
       }
