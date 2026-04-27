@@ -68,7 +68,7 @@ export async function initializeOpenAIRealtime(
   setupPeerConnectionHandlers(peerConnection, callbacks, connectionState)
 
   const dataChannel = peerConnection.createDataChannel('oai-events')
-  setupDataChannelHandlers(
+  const cleanupDataChannelHandlers = setupDataChannelHandlers(
     dataChannel,
     callbacks,
     stageManager,
@@ -162,6 +162,7 @@ export async function initializeOpenAIRealtime(
           clearStageEntryGuard(connectionState, 'component-teardown')
         }
         stopDedupCleanup(connectionState)
+        cleanupDataChannelHandlers()
         if (stream) {
           stream.getTracks().forEach((t) => t.stop())
         }
@@ -200,11 +201,8 @@ export function startConversation(connection: RealtimeConnection, initialPrompt:
       greeted = true
       cleanup()
 
-      const audioTrack = connection.connectionState?.audioTrack
-      if (audioTrack) {
-        const isMuted = connection.connectionState?.micMuted ?? false
-        audioTrack.enabled = !isMuted
-      }
+      // Mic stays disabled through assistant playback; the turn gate reopens
+      // input after assistant finalization only when no transition or reminder is pending.
 
       if (connection.connectionState) {
         const expectedIntroTranscript = getPlainSpokenLineForGuard(Stage.Introduction)

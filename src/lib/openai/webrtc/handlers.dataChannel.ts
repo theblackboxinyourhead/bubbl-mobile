@@ -18,6 +18,7 @@ import { BaselineContext } from '@/types/baseline';
 import { cleanupAudioElements } from '@/lib/openai/webrtc/handlers.audio';
 import { handleFunctionCall } from '@/lib/openai/webrtc/handlers.functionCalls';
 import { performStageTransition } from '@/lib/openai/webrtc/handlers.stageTransition';
+import { createRealtimeTurnGate } from '@/lib/openai/webrtc/turnGate';
 
 /** BFF append-transcript with Bearer auth + stable idempotency key (see api/screenings). */
 export type AppendTranscriptHandler = (
@@ -64,19 +65,58 @@ export function setupDataChannelHandlers(
   let userTurnCount = 0; // 🔔 Track user turns for this connection
   let pendingReminderPhase: ScreeningPhase | null = null; // remember phase when we owe a reminder
 
-  const trySendPendingReminder = () => {
-    if (!USE_REMINDER_PROMPT) return; // Toggle off ⇒ never send reminders
+  const turnGate = createRealtimeTurnGate({
+    sessionId: connectionState.sessionId,
+    openInput: (reason) => {
+      const t = connectionState.audioTrack
+      if (!t) return
+      if (t.enabled) return
+      t.enabled = true
+      console.log(
+        `🎤 [Turn Gate] input opened (${reason}, session: ${connectionState.sessionId})`
+      )
+    },
+    closeInput: (reason) => {
+      const t = connectionState.audioTrack
+      if (!t) return
+      if (!t.enabled) return
+      t.enabled = false
+      console.log(
+        `🎤 [Turn Gate] input closed (${reason}, session: ${connectionState.sessionId})`
+      )
+    },
+    isInputOpen: () => connectionState.audioTrack?.enabled === true,
+    canOpenInput: () =>
+      !connectionState.micMuted &&
+      !connectionState.currentResponseActive &&
+      !connectionState.audioWindowActive &&
+      !connectionState.stageTransitionInProgress,
+    isSessionOpen: () => dataChannel.readyState === 'open',
+    log: (message) => {
+      console.log(`[TurnGate] ${message}`)
+    },
+  })
+
+  const trySendPendingReminder = (): boolean => {
+    if (!USE_REMINDER_PROMPT) return false
     if (pendingReminderPhase && !connectionState.currentResponseActive) {
-      console.log(`🔔 [Reminder] Sending queued ${pendingReminderPhase} reminder after AI turn (session: ${connectionState.sessionId}).`);
+      const reminderPhase = pendingReminderPhase
+      console.log(
+        `🔔 [Reminder] Sending queued ${reminderPhase} reminder after AI turn (session: ${connectionState.sessionId}).`
+      )
       sendPromptInstruction(
         dataChannel,
         () => stageManager.getStage(),
         callbacks,
-        REMINDER_BY_PHASE[pendingReminderPhase]
-      );
-      pendingReminderPhase = null;
+        REMINDER_BY_PHASE[reminderPhase],
+        undefined,
+        { connectionState }
+      )
+      pendingReminderPhase = null
+      return true
     }
-  };
+    return false
+  }
 
   // Add onopen event handler to proactively configure the session as soon as the channel is open
   dataChannel.addEventListener('open', () => {
@@ -116,6 +156,7 @@ export function setupDataChannelHandlers(
       if (data.type === 'response.created') {
         connectionState.currentResponseActive = true;
         console.log(`🟡 [Realtime] response.created -> currentResponseActive = true (session: ${connectionState.sessionId}, transitionId: ${connectionState.transitionId})`);
+        turnGate.closeForAssistantOutput('response.created');
 
         // Bind current stage to this response ID
         const responseId = data.response?.id || data.response_id;
@@ -206,22 +247,42 @@ export function setupDataChannelHandlers(
           break;
 
         case 'response.audio_transcript.delta':
-          // AI is streaming its spoken words. Buffer these too.
-          // No need to call onAIResponse here if output_item handles full text
+          turnGate.closeForAssistantOutput('response.audio_transcript.delta');
+          break;
+
+        case 'response.output_audio_buffer.started':
+          turnGate.closeForAssistantOutput('response.output_audio_buffer.started');
+          break;
+
+        case 'output_audio_buffer.started':
+          turnGate.closeForAssistantOutput('output_audio_buffer.started');
+          break;
+
+        case 'response.audio.delta':
+          turnGate.closeForAssistantOutput('response.audio.delta');
+          break;
+
+        case 'response.output_audio_buffer.cleared':
+          if (connectionState.currentResponseActive) {
+            turnGate.closeForAssistantOutput('response.output_audio_buffer.cleared');
+          }
+          break;
+
+        case 'output_audio_buffer.cleared':
+          if (connectionState.currentResponseActive) {
+            turnGate.closeForAssistantOutput('output_audio_buffer.cleared');
+          }
+          break;
+
+        case 'output_audio_buffer.stopped':
           break;
 
         // PHI FIX: Removed duplicate response.text.done handler - keeping only response.done for assistant
 
         /* --- Consolidated Finalization Block --- */
         case 'response.content_part.done':
-        case 'response.audio_transcript.done': {
-          connectionState.currentResponseActive = false;
-          connectionState.audioWindowActive = false;
-          console.log(`🟡 [Realtime] Turn closed – flag reset (buffer processing moved to output_item) (session: ${connectionState.sessionId})`);
-          console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-          trySendPendingReminder();
+        case 'response.audio_transcript.done':
           break;
-        }
 
         case 'response.function_call':
         case 'response.function_call_arguments.done':
@@ -237,6 +298,7 @@ export function setupDataChannelHandlers(
               console.log(
                 `🔧 [Realtime] Function call received: ${functionCall.name} (session: ${connectionState.sessionId}, argsLength: ${argLen})`
               );
+              turnGate.closeForAssistantOutput('response.function_call');
               handleFunctionCall(
                 functionCall,
                 callbacks,
@@ -384,38 +446,42 @@ export function setupDataChannelHandlers(
             console.log(`🟢 [Cleanup] Trimmed processedItemIds to 1000 entries`);
           }
 
-          connectionState.currentResponseActive = false;
-          connectionState.audioWindowActive = false;
-          console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
-          console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-          trySendPendingReminder();
-
-          // --- Keep Introduction Transition Logic ---
           if (currentStage === Stage.Introduction && !introTransitionSent) {
             introTransitionSent = true;
+            connectionState.currentResponseActive = false;
+            connectionState.audioWindowActive = false;
+            console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
+            console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
+            turnGate.closeForTransition('intro-transition');
             console.log("👋 AI finished initial greeting. Sending next stage prompt (ONCE)..." );
-
-            // Determine and perform centralized transition once
             const nextStage = nextStageAfterIntro;
             console.log(`🔵 [Handlers] Intro complete. Next Stage: ${Stage[nextStage]}`);
-
             performStageTransition(dataChannel, callbacks, stageManager, nextStage, connectionState, baselineContext);
+          } else {
+            connectionState.currentResponseActive = false;
+            connectionState.audioWindowActive = false;
+            console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
+            console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
+            const reminderSent = trySendPendingReminder();
+            if (!reminderSent) {
+              turnGate.scheduleOpenAfterAssistantDone('response.done');
+            }
+            if (currentStage !== Stage.Introduction) {
+              console.log(`🟡 AI turn ended in stage ${Stage[currentStage]}. Waiting for user or function call.`);
+            }
           }
-          else if (currentStage !== Stage.Introduction) {
-               console.log(`🟡 AI turn ended in stage ${Stage[currentStage]}. Waiting for user or function call.`);
-          }
-          // --- End Introduction Transition Logic ---
           break;
         }
 
         // PHI FIX: Removed duplicate speech.phrase handler - keeping only input_audio_transcription.completed for user
 
         case 'conversation.item.input_audio_transcription.delta':
-          // Partial user speech transcription
+          if (turnGate.shouldIgnoreInput()) {
+            break;
+          }
           if (data.delta?.text) {
             callbacks.onPartialTranscript?.(data.delta.text);
 
-            // Stage Entry Guard: Mark user as speaking
             if (data.delta.text.trim()) {
               connectionState.userSpeechActive = true;
               console.log(`🔵 [Stage Entry Guard] User speech detected (session: ${connectionState.sessionId})`);
@@ -425,24 +491,24 @@ export function setupDataChannelHandlers(
 
         case 'conversation.item.input_audio_transcription.completed':
           {
+            if (turnGate.shouldIgnoreInput()) {
+              connectionState.userSpeechActive = false;
+              break;
+            }
             const userTranscript = data.transcript?.trim();
             if (userTranscript) {
               callbacks.onTranscript(userTranscript);
-              // Add user transcript to memory
               const userChunk: MemoryItem = { role: "user", content: userTranscript };
               const phase = currentStage === Stage.MedicalHistory ? 'medical-history' : 'symptoms';
               await appendTranscriptChunk(appendTranscript, screeningId, userChunk, phase, connectionState.sessionId);
 
-              // 🔔 Inject reminder every N user turns (transcript.completed)
               userTurnCount++;
               if (USE_REMINDER_PROMPT && userTurnCount % REMINDER_FREQUENCY === 0) {
                 pendingReminderPhase = currentStage === Stage.Symptoms ? 'symptoms' : 'medicalHistory';
                 console.log(`🔔 [Reminder] Queued ${pendingReminderPhase} reminder on turn ${userTurnCount}`);
-                // Defer sending; will trigger after current AI turn completes
               }
             }
 
-            // Stage Entry Guard: User finished speaking
             connectionState.userSpeechActive = false;
             console.log(`🔵 [Stage Entry Guard] User speech completed (session: ${connectionState.sessionId})`);
           }
@@ -452,16 +518,21 @@ export function setupDataChannelHandlers(
 
         case 'response.canceled':
           connectionState.currentResponseActive = false;
+          connectionState.audioWindowActive = false;
           console.log(`🟡 [Realtime] Response canceled - flag reset (session: ${connectionState.sessionId})`);
 
-          // Stage Entry Guard: Clear cancel watchdog if this is the guarded response
           if (connectionState.stageEntryGuard?.cancelWatchdog) {
             clearTimeout(connectionState.stageEntryGuard.cancelWatchdog);
             connectionState.stageEntryGuard.cancelWatchdog = null;
             console.log(`🔵 [Stage Entry Guard] Cancel acknowledged (session: ${connectionState.sessionId})`);
           }
 
-          trySendPendingReminder();
+          {
+            const reminderSentOnCancel = trySendPendingReminder();
+            if (!reminderSentOnCancel) {
+              turnGate.scheduleOpenAfterAssistantDone('response.canceled');
+            }
+          }
           break;
 
         case 'error':
@@ -488,14 +559,19 @@ export function setupDataChannelHandlers(
           break;
 
         default:
-          // Possibly lots of less important events: 'response.audio_transcript.delta', etc.
-          // We show the ones we want to see in the logs:
           if (![
+            'response.content_part.added',
+            'response.content_part.delta',
             'response.content_part.done',
             'response.output_item.done',
             'response.audio_transcript.delta',
+            'response.audio_transcript.done',
             'response.output_audio_buffer.started',
-            'output_audio_buffer.stopped'
+            'output_audio_buffer.started',
+            'response.output_audio_buffer.cleared',
+            'output_audio_buffer.cleared',
+            'output_audio_buffer.stopped',
+            'response.audio.delta',
           ].includes(data.type)) {
             console.log(
               `🟡 [Realtime] Unhandled event type: ${data.type} (session: ${connectionState.sessionId})`
@@ -515,35 +591,40 @@ export function setupDataChannelHandlers(
   });
 
   dataChannel.addEventListener('error', () => {
+    turnGate.cleanup('data-channel-error');
     console.error(`🔴 [Realtime] DataChannel error (session: ${connectionState.sessionId})`);
     callbacks.onError(new Error('WebRTC data channel error occurred.'));
   });
 
   dataChannel.addEventListener('close', () => {
+    turnGate.cleanup('data-channel-close');
     console.log(`🔵 [Realtime] Data channel closed (session: ${connectionState.sessionId}).`);
 
-    // Comprehensive cleanup on data channel close
     console.log(`🧹 [Cleanup] Performing comprehensive state cleanup on dataChannel close (session: ${connectionState.sessionId})`);
 
-    // Stage Entry Guard: Clear all guard state
     if (connectionState.stageEntryExpectation || connectionState.stageEntryGuard) {
       clearStageEntryGuard(connectionState, 'data-channel-close');
     }
 
-    // Clear all deduplication state
     connectionState.processedResponseIds.clear();
     connectionState.processedItemIds.clear();
     connectionState.responseIdTimestamps.clear();
     connectionState.itemIdTimestamps.clear();
 
-    // Clear all stage snapshots
     connectionState.stageSnapshots.clear();
     connectionState.snapshotTimestamps.clear();
 
-    // Clean up audio elements (preserve original: no stream detach, use remove(), close window after)
     cleanupAudioElements(connectionState, { closeWindowFirst: false });
 
     console.log(`✅ [Cleanup] State cleanup complete on dataChannel close (session: ${connectionState.sessionId})`);
-    // If you want to treat closure as an error, you can call onError() or similar here.
   });
+
+  let dataChannelCleanedUp = false;
+  return () => {
+    if (dataChannelCleanedUp) {
+      return;
+    }
+    dataChannelCleanedUp = true;
+    turnGate.cleanup('connection-disconnect');
+  };
 }
