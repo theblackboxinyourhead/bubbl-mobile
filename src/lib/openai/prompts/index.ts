@@ -109,8 +109,11 @@ export function getSystemPromptForStage(stage: Stage, baselineContext?: Baseline
 
       const historyBaseline = buildBaselineBlockForStage({ stage: Stage.MedicalHistory, baselineContext }).block;
       const historyCompletion = " When the patient has nothing more to add, tell them to tap the 'Submit History' button and we'll discuss what brings them in today.";
+      const historyTerminalRule =
+        " If the patient says they have nothing else to add, treat that as the end of medical history stage and don't ask anymore questions for it. " +
+        "Instead, tell the patient once to tap the 'Submit History' button.";
 
-      return BASE_POLICY + historyInstructions + historyBaseline + historyCompletion;
+      return BASE_POLICY + historyInstructions + historyBaseline + historyCompletion + historyTerminalRule;
 
     case Stage.Symptoms:
       let symptomsInstructions = " CURRENT_STAGE: Symptoms. ";
@@ -138,8 +141,11 @@ export function getSystemPromptForStage(stage: Stage, baselineContext?: Baseline
 
       const symptomsBaseline = buildBaselineBlockForStage({ stage: Stage.Symptoms, baselineContext }).block;
       const symptomsCompletion = " When the patient has nothing more to add, tell them to tap the 'Finish Screening' button and your results will be sent to your doctor.";
+      const symptomsTerminalRule =
+        "If the patient says they have nothing else to add, treat that as the end of symptoms stage and don't ask anymore questions for it. " +
+        "Instead, tell the patient once to tap the 'Finish Screening' button.";
 
-      return BASE_POLICY + symptomsInstructions + symptomsBaseline + symptomsCompletion;
+      return BASE_POLICY + symptomsInstructions + symptomsBaseline + symptomsCompletion + symptomsTerminalRule;
 
     case Stage.Conclusion:
       return BASE_POLICY + " CURRENT_STAGE: Conclusion. Focus on wrapping up the screening.";

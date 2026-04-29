@@ -2,7 +2,7 @@
  * DataChannel event handlers for WebRTC Real-Time API.
  * Manages conversation flow, transcript processing, and message routing.
  */
-import { Stage, RealtimeCallbacks, MemoryItem, ConnectionState, addResponseId, addStageSnapshot, type RTCDataChannel } from '@/lib/openai/webrtc/types';
+import { Stage, RealtimeCallbacks, MemoryItem, ConnectionState, addResponseId, addItemId, addStageSnapshot, type RTCDataChannel } from '@/lib/openai/webrtc/types';
 import { sendPromptInstruction } from '@/lib/openai/webrtc/utils';
 import { getSystemPromptForStage } from '@/lib/openai/prompts';
 import { createStageManager } from '@/lib/openai/webrtc/stageManager';
@@ -156,11 +156,9 @@ export function setupDataChannelHandlers(
       if (data.type === 'response.created') {
         connectionState.currentResponseActive = true;
         console.log(`🟡 [Realtime] response.created -> currentResponseActive = true (session: ${connectionState.sessionId}, transitionId: ${connectionState.transitionId})`);
-        turnGate.closeForAssistantOutput('response.created');
 
         // Bind current stage to this response ID
         const responseId = data.response?.id || data.response_id;
-        const currentStage = stageManager.getStage();
 
         if (responseId) {
           addStageSnapshot(connectionState, responseId, currentStage);
@@ -233,6 +231,17 @@ export function setupDataChannelHandlers(
           break;
 
         case 'response.content_part.added':   // first chunk
+          {
+            const chunk =
+              data.content ??
+              data.delta?.text ??
+              data.delta?.value ??
+              '';
+            if (chunk) {
+              callbacks.onAIResponse(chunk); // Preserve streaming display
+            }
+          }
+          break;
         case 'response.content_part.delta':   // subsequent chunks
           {
             const chunk =
@@ -247,40 +256,40 @@ export function setupDataChannelHandlers(
           break;
 
         case 'response.audio_transcript.delta':
-          turnGate.closeForAssistantOutput('response.audio_transcript.delta');
           break;
 
         case 'response.output_audio_buffer.started':
-          turnGate.closeForAssistantOutput('response.output_audio_buffer.started');
           break;
 
         case 'output_audio_buffer.started':
-          turnGate.closeForAssistantOutput('output_audio_buffer.started');
           break;
 
         case 'response.audio.delta':
-          turnGate.closeForAssistantOutput('response.audio.delta');
+          break;
+
+        case 'response.audio.done':
+          console.log(
+            `response.audio.done (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
           break;
 
         case 'response.output_audio_buffer.cleared':
-          if (connectionState.currentResponseActive) {
-            turnGate.closeForAssistantOutput('response.output_audio_buffer.cleared');
-          }
           break;
 
         case 'output_audio_buffer.cleared':
-          if (connectionState.currentResponseActive) {
-            turnGate.closeForAssistantOutput('output_audio_buffer.cleared');
-          }
           break;
 
         case 'output_audio_buffer.stopped':
+          console.log(
+            `output_audio_buffer.stopped (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
           break;
 
         // PHI FIX: Removed duplicate response.text.done handler - keeping only response.done for assistant
 
         /* --- Consolidated Finalization Block --- */
         case 'response.content_part.done':
+          break;
         case 'response.audio_transcript.done':
           break;
 
@@ -298,7 +307,6 @@ export function setupDataChannelHandlers(
               console.log(
                 `🔧 [Realtime] Function call received: ${functionCall.name} (session: ${connectionState.sessionId}, argsLength: ${argLen})`
               );
-              turnGate.closeForAssistantOutput('response.function_call');
               handleFunctionCall(
                 functionCall,
                 callbacks,
@@ -452,7 +460,6 @@ export function setupDataChannelHandlers(
             connectionState.audioWindowActive = false;
             console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
             console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-            turnGate.closeForTransition('intro-transition');
             console.log("👋 AI finished initial greeting. Sending next stage prompt (ONCE)..." );
             const nextStage = nextStageAfterIntro;
             console.log(`🔵 [Handlers] Intro complete. Next Stage: ${Stage[nextStage]}`);
@@ -462,10 +469,7 @@ export function setupDataChannelHandlers(
             connectionState.audioWindowActive = false;
             console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
             console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-            const reminderSent = trySendPendingReminder();
-            if (!reminderSent) {
-              turnGate.scheduleOpenAfterAssistantDone('response.done');
-            }
+            trySendPendingReminder();
             if (currentStage !== Stage.Introduction) {
               console.log(`🟡 AI turn ended in stage ${Stage[currentStage]}. Waiting for user or function call.`);
             }
@@ -476,9 +480,6 @@ export function setupDataChannelHandlers(
         // PHI FIX: Removed duplicate speech.phrase handler - keeping only input_audio_transcription.completed for user
 
         case 'conversation.item.input_audio_transcription.delta':
-          if (turnGate.shouldIgnoreInput()) {
-            break;
-          }
           if (data.delta?.text) {
             callbacks.onPartialTranscript?.(data.delta.text);
 
@@ -491,35 +492,93 @@ export function setupDataChannelHandlers(
 
         case 'conversation.item.input_audio_transcription.completed':
           {
-            if (turnGate.shouldIgnoreInput()) {
-              connectionState.userSpeechActive = false;
-              break;
+            const d = data as { transcript?: string; item_id?: string; item?: { id?: string } }
+            const userItemId: string | undefined =
+              typeof d.item_id === 'string'
+                ? d.item_id
+                : typeof d.item?.id === 'string'
+                  ? d.item.id
+                  : undefined
+            if (userItemId && connectionState.processedItemIds.has(userItemId)) {
+              connectionState.userSpeechActive = false
+              break
             }
-            const userTranscript = data.transcript?.trim();
-            if (userTranscript) {
-              callbacks.onTranscript(userTranscript);
-              const userChunk: MemoryItem = { role: "user", content: userTranscript };
-              const phase = currentStage === Stage.MedicalHistory ? 'medical-history' : 'symptoms';
-              await appendTranscriptChunk(appendTranscript, screeningId, userChunk, phase, connectionState.sessionId);
-
-              userTurnCount++;
-              if (USE_REMINDER_PROMPT && userTurnCount % REMINDER_FREQUENCY === 0) {
-                pendingReminderPhase = currentStage === Stage.Symptoms ? 'symptoms' : 'medicalHistory';
-                console.log(`🔔 [Reminder] Queued ${pendingReminderPhase} reminder on turn ${userTurnCount}`);
+            const userTranscript = d.transcript?.trim()
+            if (!userTranscript) {
+              if (userItemId) {
+                addItemId(connectionState, userItemId)
               }
+              connectionState.userSpeechActive = false
+              console.log(`🔵 [Stage Entry Guard] User speech completed (session: ${connectionState.sessionId})`);
+              break
             }
+            if (userItemId) {
+              addItemId(connectionState, userItemId)
+            }
+            callbacks.onTranscript(userTranscript);
+            const userChunk: MemoryItem = { role: "user", content: userTranscript };
+            const phase = currentStage === Stage.MedicalHistory ? 'medical-history' : 'symptoms';
+            await appendTranscriptChunk(appendTranscript, screeningId, userChunk, phase, connectionState.sessionId);
 
+            userTurnCount++;
+            if (USE_REMINDER_PROMPT && userTurnCount % REMINDER_FREQUENCY === 0) {
+              pendingReminderPhase = currentStage === Stage.Symptoms ? 'symptoms' : 'medicalHistory';
+              console.log(`🔔 [Reminder] Queued ${pendingReminderPhase} reminder on turn ${userTurnCount}`);
+            }
+            console.log(
+              `user transcript completed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${userTranscript.length}, transcriptHash: ${hashTranscriptForLog(userTranscript)})`
+            )
             connectionState.userSpeechActive = false;
-            console.log(`🔵 [Stage Entry Guard] User speech completed (session: ${connectionState.sessionId})`);
           }
           break;
 
-        // PHI FIX: Removed duplicate conversation.item.created handler - keeping only response.done for assistant
+        case 'input_audio_buffer.speech_started':
+          connectionState.userSpeechActive = true;
+          console.log(
+            `speech_started.listening_window (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
+          break;
+
+        case 'input_audio_buffer.speech_stopped':
+          connectionState.userSpeechActive = false;
+          console.log(
+            `input_audio_buffer.speech_stopped (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
+          break;
+
+        case 'input_audio_buffer.committed':
+          console.log(
+            `input_audio_buffer.committed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
+          break;
+
+        case 'input_audio_buffer.cleared':
+          console.log(
+            `input_audio_buffer.cleared (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
+          break;
+
+        case 'conversation.item.created': {
+          const it = (data as { item?: { role?: string } }).item;
+          const role = it?.role;
+          console.log(
+            `conversation.item.created (role: ${role ?? 'unknown'}, session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
+          break;
+        }
+
+        case 'conversation.item.truncated':
+          console.log(
+            `conversation.item.truncated (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
+          break;
 
         case 'response.canceled':
+        case 'response.cancelled':
+        case 'response.interrupted':
           connectionState.currentResponseActive = false;
           connectionState.audioWindowActive = false;
-          console.log(`🟡 [Realtime] Response canceled - flag reset (session: ${connectionState.sessionId})`);
+          console.log(`🟡 [Realtime] Response canceled - flag reset (session: ${connectionState.sessionId}, type: ${data.type})`);
 
           if (connectionState.stageEntryGuard?.cancelWatchdog) {
             clearTimeout(connectionState.stageEntryGuard.cancelWatchdog);
@@ -528,10 +587,7 @@ export function setupDataChannelHandlers(
           }
 
           {
-            const reminderSentOnCancel = trySendPendingReminder();
-            if (!reminderSentOnCancel) {
-              turnGate.scheduleOpenAfterAssistantDone('response.canceled');
-            }
+            trySendPendingReminder();
           }
           break;
 
@@ -560,6 +616,7 @@ export function setupDataChannelHandlers(
 
         default:
           if (![
+            'response.created',
             'response.content_part.added',
             'response.content_part.delta',
             'response.content_part.done',
@@ -572,6 +629,13 @@ export function setupDataChannelHandlers(
             'output_audio_buffer.cleared',
             'output_audio_buffer.stopped',
             'response.audio.delta',
+            'response.audio.done',
+            'input_audio_buffer.speech_started',
+            'input_audio_buffer.speech_stopped',
+            'input_audio_buffer.committed',
+            'input_audio_buffer.cleared',
+            'conversation.item.created',
+            'conversation.item.truncated',
           ].includes(data.type)) {
             console.log(
               `🟡 [Realtime] Unhandled event type: ${data.type} (session: ${connectionState.sessionId})`

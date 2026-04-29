@@ -201,8 +201,11 @@ export function startConversation(connection: RealtimeConnection, initialPrompt:
       greeted = true
       cleanup()
 
-      // Mic stays disabled through assistant playback; the turn gate reopens
-      // input after assistant finalization only when no transition or reminder is pending.
+      // Frontend parity: enable mic once session is configured (respect micMuted latch).
+      // After greeting response.create, enable server VAD for normal turn-taking.
+      if (connection.connectionState?.audioTrack) {
+        connection.connectionState.audioTrack.enabled = !connection.connectionState.micMuted
+      }
 
       if (connection.connectionState) {
         const expectedIntroTranscript = getPlainSpokenLineForGuard(Stage.Introduction)
@@ -227,20 +230,18 @@ export function startConversation(connection: RealtimeConnection, initialPrompt:
             },
           })
         )
-      } catch (err) {
-        console.error('[Realtime] Failed to send greeting:', err)
-        return
-      }
-
-      try {
         connection.dataChannel.send(
           JSON.stringify({
             type: 'session.update',
-            session: { turn_detection: { type: 'server_vad' } },
+            session: {
+              turn_detection: { type: 'server_vad' },
+            },
           })
         )
+        console.log(`🟢 [Realtime] session.update sent (VAD on) (session: ${connection.connectionState?.sessionId})`)
       } catch (err) {
-        console.error('[Realtime] Failed to send VAD enable:', err)
+        console.error('[Realtime] Failed to send greeting:', err)
+        return
       }
     }
 

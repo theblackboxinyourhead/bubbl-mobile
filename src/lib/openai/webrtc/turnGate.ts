@@ -1,4 +1,5 @@
 const DEFAULT_REOPEN_DELAY_MS = 900
+const DEFAULT_VAD_ENABLE_DELAY_MS = 300
 
 export type RealtimeTurnGateOptions = {
   sessionId: string
@@ -9,6 +10,10 @@ export type RealtimeTurnGateOptions = {
   isSessionOpen: () => boolean
   log?: (message: string) => void
   reopenDelayMs?: number
+  disableTurnDetection?: (reason: string) => boolean
+  enableTurnDetection?: (reason: string) => boolean
+  clearInputBuffer?: (reason: string) => boolean
+  vadEnableDelayMs?: number
 }
 
 export type RealtimeTurnGate = {
@@ -30,52 +35,103 @@ export function createRealtimeTurnGate(options: RealtimeTurnGateOptions): Realti
     isSessionOpen,
     log,
     reopenDelayMs = DEFAULT_REOPEN_DELAY_MS,
+    disableTurnDetection,
+    enableTurnDetection,
+    clearInputBuffer,
+    vadEnableDelayMs = DEFAULT_VAD_ENABLE_DELAY_MS,
   } = options
 
   let pendingOpenTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingVadEnableTimer: ReturnType<typeof setTimeout> | null = null
+  let serverVadEnabled = false
+  let gateVersion = 0
 
   const logLine = (message: string) => {
     log?.(`[${sessionId}] ${message}`)
   }
 
-  const clearPendingTimerSilently = (): void => {
-    if (pendingOpenTimer === null) return
-    clearTimeout(pendingOpenTimer)
-    pendingOpenTimer = null
+  const clearPendingTimers = (): void => {
+    if (pendingOpenTimer !== null) {
+      clearTimeout(pendingOpenTimer)
+      pendingOpenTimer = null
+    }
+    if (pendingVadEnableTimer !== null) {
+      clearTimeout(pendingVadEnableTimer)
+      pendingVadEnableTimer = null
+    }
+  }
+
+  const tryDisableServerVad = (reason: string): void => {
+    if (!serverVadEnabled) return
+    if (!disableTurnDetection) return
+    const ok = disableTurnDetection(reason)
+    if (ok) {
+      serverVadEnabled = false
+    }
   }
 
   const closeForAssistantOrTransition = (reason: string): void => {
-    clearPendingTimerSilently()
+    gateVersion++
+    clearPendingTimers()
+    tryDisableServerVad(reason)
     closeInput(reason)
   }
 
   const scheduleOpenAfterAssistantDone = (reason: string): void => {
-    clearPendingTimerSilently()
+    clearPendingTimers()
+    gateVersion++
+    const capturedVersion = gateVersion
+    tryDisableServerVad(reason)
+    closeInput(reason)
     logLine(`Turn gate: scheduling delayed input reopen (${reason}) in ${reopenDelayMs}ms`)
     pendingOpenTimer = setTimeout(() => {
       pendingOpenTimer = null
-      if (isSessionOpen() && canOpenInput()) {
-        openInput(reason)
-      }
+      if (capturedVersion !== gateVersion) return
+      if (!isSessionOpen() || !canOpenInput()) return
+      openInput(reason)
+      pendingVadEnableTimer = setTimeout(() => {
+        pendingVadEnableTimer = null
+        if (capturedVersion !== gateVersion) return
+        if (!isSessionOpen() || !canOpenInput()) return
+        if (clearInputBuffer) {
+          const clearOk = clearInputBuffer(reason)
+          if (!clearOk) {
+            closeInput(reason)
+            return
+          }
+        }
+        if (enableTurnDetection && !serverVadEnabled) {
+          const enOk = enableTurnDetection(reason)
+          if (!enOk) {
+            closeInput(reason)
+            return
+          }
+          serverVadEnabled = true
+        }
+      }, vadEnableDelayMs)
     }, reopenDelayMs)
   }
 
   const cancelPendingOpen = (reason: string): void => {
-    if (pendingOpenTimer === null) return
-    clearPendingTimerSilently()
+    const hadPending = pendingOpenTimer !== null || pendingVadEnableTimer !== null
+    gateVersion++
+    if (!hadPending) return
+    clearPendingTimers()
     logLine(`Turn gate: cleared pending reopen (${reason})`)
   }
 
   const shouldIgnoreInput = (): boolean => {
-    return !isInputOpen()
+    return !isInputOpen() || !serverVadEnabled
   }
 
   const cleanup = (reason: string): void => {
-    const hadPendingTimer = pendingOpenTimer !== null
-    clearPendingTimerSilently()
-    if (hadPendingTimer) {
+    gateVersion++
+    const hadPending = pendingOpenTimer !== null || pendingVadEnableTimer !== null
+    clearPendingTimers()
+    if (hadPending) {
       logLine(`Turn gate: cleared pending reopen (cleanup: ${reason})`)
     }
+    tryDisableServerVad(reason)
     closeInput(reason)
   }
 
