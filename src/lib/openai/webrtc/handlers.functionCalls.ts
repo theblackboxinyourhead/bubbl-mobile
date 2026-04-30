@@ -2,9 +2,8 @@
  * Function call handler for WebRTC event handlers.
  * Extracted from handlers.ts for modularity.
  */
-import { Stage, RealtimeCallbacks, ConnectionState, type RTCDataChannel } from '@/lib/openai/webrtc/types';
+import { RealtimeCallbacks, ConnectionState, type RTCDataChannel } from '@/lib/openai/webrtc/types';
 import { createStageManager } from '@/lib/openai/webrtc/stageManager';
-import { performStageTransition } from '@/lib/openai/webrtc/handlers.stageTransition';
 import { BaselineContext } from '@/types/baseline';
 
 /**
@@ -23,6 +22,9 @@ export function handleFunctionCall(
   connectionState: ConnectionState,
   baselineContext?: BaselineContext
 ) {
+  void dataChannel
+  void stageManager
+  void baselineContext
 
   try {
     const fc = asRecord(functionCall)
@@ -52,19 +54,10 @@ export function handleFunctionCall(
       case 'completeMedicalHistoryPhone': {
         try {
             const args = typeof fc.arguments === 'string' ? JSON.parse(fc.arguments) : {}
-            if (args.stageComplete) {
-                console.log(`🟡 [Realtime] AI signaled medical history complete. Moving to Symptoms stage (session: ${connectionState.sessionId})...`);
-                performStageTransition(
-                  dataChannel,
-                  callbacks,
-                  stageManager,
-                  Stage.Symptoms,
-                  connectionState,
-                  baselineContext
-                );
-            } else {
-                console.warn('🟡 [Realtime] completeMedicalHistory called, but stageComplete was not true.');
-            }
+            const stageComplete = Boolean((args as { stageComplete?: unknown }).stageComplete)
+            console.log(
+              `🟡 [Realtime] Ignoring AI-driven medical history completion (button-owned stage boundary, session: ${connectionState.sessionId}, stageComplete: ${stageComplete})`
+            )
         } catch (err) {
              console.error('🔴 [Realtime] Error parsing arguments for completeMedicalHistory:', err);
              callbacks.onError(new Error('Error parsing function call JSON for completeMedicalHistory'));
@@ -82,19 +75,10 @@ export function handleFunctionCall(
                 onData?.({ symptoms: args.symptoms }); // 🚀 stream to UI immediately
             }
 
-            if (args.stageComplete) {
-                console.log(`🟡 [Realtime] AI signaled symptoms collection complete. Moving to Conclusion stage (session: ${connectionState.sessionId})...`);
-                performStageTransition(
-                  dataChannel,
-                  callbacks,
-                  stageManager,
-                  Stage.Conclusion,
-                  connectionState,
-                  baselineContext
-                );
-            } else {
-                console.warn('🟡 [Realtime] completeSymptoms called, but stageComplete was not true.');
-            }
+            const stageComplete = Boolean((args as { stageComplete?: unknown }).stageComplete)
+            console.log(
+              `🟡 [Realtime] Ignoring AI-driven symptoms completion (button-owned stage boundary, session: ${connectionState.sessionId}, stageComplete: ${stageComplete})`
+            )
         } catch (err) {
             console.error('🔴 [Realtime] Error parsing arguments for completeSymptoms:', err);
             callbacks.onError(new Error('Error parsing function call JSON for completeSymptoms'));

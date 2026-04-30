@@ -21,8 +21,8 @@ export function getFunctionSchemaContent(schemaName?: string): string | undefine
 export function getFunctionSchemaKey(stage: Stage): string | undefined {
   const schemaMap: Record<Stage, string | undefined> = {
     [Stage.Introduction]: undefined,
-    [Stage.MedicalHistory]: 'FUNCTION_SCHEMA_MEDICAL_HISTORY',
-    [Stage.Symptoms]: 'FUNCTION_SCHEMA_SYMPTOMS',
+    [Stage.MedicalHistory]: undefined,
+    [Stage.Symptoms]: undefined,
     [Stage.Conclusion]: 'FUNCTION_SCHEMA_EXTRACT_MEDICAL_DATA',
   };
   return schemaMap[stage];

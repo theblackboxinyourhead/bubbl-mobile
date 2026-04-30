@@ -79,9 +79,57 @@ export function IntakeScreen({ route, navigation }: Props) {
     InCallManager.stop()
   }, [])
 
+  const restoreListeningAfterBoundaryFailure = useCallback(
+    (phase: 'medical-history' | 'symptoms', reason: string) => {
+      const conn = connRef.current
+      if (!conn || conn.dataChannel.readyState !== 'open') {
+        return
+      }
+      if (conn.connectionState?.micMuted === true) {
+        if (conn.connectionState.audioTrack) {
+          conn.connectionState.audioTrack.enabled = false
+        }
+        console.log(
+          `🟡 [Intake] Boundary failure restore skipped (screeningId: ${screeningId}, session: ${conn.connectionState?.sessionId ?? 'unknown'}, phase: ${phase}, reason: mic-muted)`
+        )
+        return
+      }
+      if (!conn.connectionState?.restoreListeningAfterBoundaryFailure) {
+        console.log(
+          `🟡 [Intake] Boundary failure restore skipped (screeningId: ${screeningId}, session: ${conn.connectionState?.sessionId ?? 'unknown'}, phase: ${phase}, reason: missing-turn-gate-restore-callback)`
+        )
+        return
+      }
+      conn.connectionState.restoreListeningAfterBoundaryFailure(`${phase}:${reason}`)
+      console.log(
+        `🟢 [Intake] Boundary failure restore applied (screeningId: ${screeningId}, session: ${conn.connectionState?.sessionId ?? 'unknown'}, phase: ${phase}, reason: ${reason}, via: turnGate)`
+      )
+    },
+    [screeningId]
+  )
+
   const completeMedicalHistoryPhase = useCallback(
     async (realtimeSessionId: string | null) => {
       if (finishing) return
+      const conn = connRef.current
+      if (conn?.connectionState?.audioTrack) {
+        conn.connectionState.audioTrack.enabled = false
+      }
+      if (conn?.connectionState) {
+        conn.connectionState.userSpeechActive = false
+      }
+      if (conn?.dataChannel.readyState === 'open') {
+        conn.sendMessage({
+          type: 'session.update',
+          session: { turn_detection: null },
+        })
+        conn.sendMessage({
+          type: 'input_audio_buffer.clear',
+        })
+      }
+      console.log(
+        `🟢 [Intake] Button boundary cleanup (screeningId: ${screeningId}, session: ${conn?.connectionState?.sessionId ?? 'unknown'}, phase: medical-history)`
+      )
       setFinishing(true)
       setPhaseLabel('Saving medical history...')
       try {
@@ -99,17 +147,40 @@ export function IntakeScreen({ route, navigation }: Props) {
         await persistContext('symptoms')
         connRef.current?.manuallyCompleteCurrentStage?.()
       } catch (e) {
+        restoreListeningAfterBoundaryFailure(
+          'medical-history',
+          e instanceof Error ? e.name : typeof e
+        )
         setError(mapFinishError(e))
       } finally {
         setFinishing(false)
       }
     },
-    [finishing, persistContext, screeningId]
+    [finishing, persistContext, restoreListeningAfterBoundaryFailure, screeningId]
   )
 
   const completeSymptomsPhase = useCallback(
     async (realtimeSessionId: string | null) => {
       if (finishing) return
+      const conn = connRef.current
+      if (conn?.connectionState?.audioTrack) {
+        conn.connectionState.audioTrack.enabled = false
+      }
+      if (conn?.connectionState) {
+        conn.connectionState.userSpeechActive = false
+      }
+      if (conn?.dataChannel.readyState === 'open') {
+        conn.sendMessage({
+          type: 'session.update',
+          session: { turn_detection: null },
+        })
+        conn.sendMessage({
+          type: 'input_audio_buffer.clear',
+        })
+      }
+      console.log(
+        `🟢 [Intake] Button boundary cleanup (screeningId: ${screeningId}, session: ${conn?.connectionState?.sessionId ?? 'unknown'}, phase: symptoms)`
+      )
       setFinishing(true)
       setPhaseLabel('Saving symptoms...')
       try {
@@ -118,12 +189,16 @@ export function IntakeScreen({ route, navigation }: Props) {
         teardown()
         navigation.replace('ReviewConfirm', { screeningId, source })
       } catch (e) {
+        restoreListeningAfterBoundaryFailure(
+          'symptoms',
+          e instanceof Error ? e.name : typeof e
+        )
         setError(mapFinishError(e))
       } finally {
         setFinishing(false)
       }
     },
-    [finishing, navigation, screeningId, source, teardown]
+    [finishing, navigation, restoreListeningAfterBoundaryFailure, screeningId, source, teardown]
   )
 
   completeMedicalHistoryPhaseRef.current = completeMedicalHistoryPhase

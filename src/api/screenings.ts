@@ -155,7 +155,17 @@ export async function fetchOpenAiPrompts(screeningId: string) {
 export async function fetchScreeningPatient(screeningId: string) {
   const raw = await apiJson<unknown>(`/api/screenings/${screeningId}`)
   const parsed = PatientScreeningDetailSchema.safeParse(raw)
-  if (!parsed.success) throw new Error('Invalid screening detail response')
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map(({ path, code }) => ({
+      path: path.join('.'),
+      code,
+    }))
+    console.warn('🟡 [Screenings API] Patient detail schema validation failed', {
+      screeningId,
+      issues,
+    })
+    throw new Error('Invalid screening detail response')
+  }
   return parsed.data
 }
 

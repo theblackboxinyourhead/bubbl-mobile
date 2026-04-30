@@ -4,7 +4,8 @@
  */
 import { Stage, RealtimeCallbacks, MemoryItem, ConnectionState, addResponseId, addItemId, addStageSnapshot, type RTCDataChannel } from '@/lib/openai/webrtc/types';
 import { sendPromptInstruction } from '@/lib/openai/webrtc/utils';
-import { getSystemPromptForStage } from '@/lib/openai/prompts';
+import { getCompletedUserTurnPromptForStage, getSystemPromptForStage } from '@/lib/openai/prompts';
+import { getFunctionSchemaContent, getFunctionSchemaKey } from '@/lib/openai/webrtc/prompts';
 import { createStageManager } from '@/lib/openai/webrtc/stageManager';
 import { REMINDER_FREQUENCY, REMINDER_BY_PHASE, ScreeningPhase, USE_REMINDER_PROMPT } from '@/lib/openai/prompts/reminderConfig';
 import {
@@ -64,6 +65,22 @@ export function setupDataChannelHandlers(
   let introTransitionSent = false;
   let userTurnCount = 0; // 🔔 Track user turns for this connection
   let pendingReminderPhase: ScreeningPhase | null = null; // remember phase when we owe a reminder
+  let currentListeningWindowContaminated = false;
+  let rejectNextCompletedTranscript = false;
+  let activeAssistantResponseId: string | null = null
+  let outputStoppedResponseId: string | null = null
+  let responseDoneResponseId: string | null = null
+  let reopenScheduledResponseId: string | null = null
+  let reopenScheduledForCurrentResponse = false
+  let outputStopFallbackTimer: ReturnType<typeof setTimeout> | null = null
+  const OUTPUT_STOP_FALLBACK_MS = 5000
+
+  const clearOutputStopFallbackTimer = (): void => {
+    if (outputStopFallbackTimer !== null) {
+      clearTimeout(outputStopFallbackTimer)
+      outputStopFallbackTimer = null
+    }
+  }
 
   const turnGate = createRealtimeTurnGate({
     sessionId: connectionState.sessionId,
@@ -92,10 +109,135 @@ export function setupDataChannelHandlers(
       !connectionState.audioWindowActive &&
       !connectionState.stageTransitionInProgress,
     isSessionOpen: () => dataChannel.readyState === 'open',
+    disableTurnDetection: (reason) => {
+      if (dataChannel.readyState !== 'open') {
+        console.log(
+          `🟡 [Turn Gate] disableTurnDetection skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
+        )
+        return false
+      }
+      try {
+        dataChannel.send(
+          JSON.stringify({
+            type: 'session.update',
+            session: {
+              turn_detection: null,
+            },
+          })
+        )
+        console.log(
+          `🟢 [Turn Gate] disableTurnDetection sent (reason: ${reason}, session: ${connectionState.sessionId})`
+        )
+        return true
+      } catch (err) {
+        console.warn(
+          `🟡 [Turn Gate] disableTurnDetection failed (reason: ${reason}, session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
+        )
+        return false
+      }
+    },
+    enableTurnDetection: (reason) => {
+      if (dataChannel.readyState !== 'open') {
+        console.log(
+          `🟡 [Turn Gate] enableTurnDetection skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
+        )
+        return false
+      }
+      try {
+        dataChannel.send(
+          JSON.stringify({
+            type: 'session.update',
+            session: {
+              turn_detection: {
+                type: 'server_vad',
+                create_response: false,
+                interrupt_response: false,
+              },
+            },
+          })
+        )
+        console.log(
+          `🟢 [Turn Gate] enableTurnDetection sent (reason: ${reason}, session: ${connectionState.sessionId})`
+        )
+        return true
+      } catch (err) {
+        console.warn(
+          `🟡 [Turn Gate] enableTurnDetection failed (reason: ${reason}, session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
+        )
+        return false
+      }
+    },
+    clearInputBuffer: (reason) => {
+      if (dataChannel.readyState !== 'open') {
+        console.log(
+          `🟡 [Turn Gate] clearInputBuffer skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
+        )
+        return false
+      }
+      try {
+        dataChannel.send(
+          JSON.stringify({
+            type: 'input_audio_buffer.clear',
+          })
+        )
+        console.log(
+          `🟢 [Turn Gate] clearInputBuffer sent (reason: ${reason}, session: ${connectionState.sessionId})`
+        )
+        return true
+      } catch (err) {
+        console.warn(
+          `🟡 [Turn Gate] clearInputBuffer failed (reason: ${reason}, session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
+        )
+        return false
+      }
+    },
     log: (message) => {
       console.log(`[TurnGate] ${message}`)
     },
   })
+
+  connectionState.restoreListeningAfterBoundaryFailure = (reason) => {
+    if (dataChannel.readyState !== 'open') {
+      console.log(
+        `🟡 [Turn Gate] boundary failure restore skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
+      )
+      return
+    }
+    if (connectionState.micMuted) {
+      const track = connectionState.audioTrack
+      if (track) {
+        track.enabled = false
+      }
+      console.log(
+        `🟡 [Turn Gate] boundary failure restore skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: mic-muted)`
+      )
+      return
+    }
+    connectionState.currentResponseActive = false
+    connectionState.audioWindowActive = false
+    connectionState.userSpeechActive = false
+    currentListeningWindowContaminated = false
+    rejectNextCompletedTranscript = false
+    clearOutputStopFallbackTimer()
+    turnGate.scheduleOpenAfterAssistantDone(`boundary-failure:${reason}`)
+    console.log(
+      `🟢 [Turn Gate] boundary failure restore scheduled (reason: ${reason}, session: ${connectionState.sessionId})`
+    )
+  }
+
+  const getRealtimeResponseId = (data: unknown): string | null => {
+    if (typeof data !== 'object' || data === null) {
+      return null
+    }
+    const eventData = data as { response?: { id?: unknown }; response_id?: unknown }
+    if (typeof eventData.response?.id === 'string') {
+      return eventData.response.id
+    }
+    if (typeof eventData.response_id === 'string') {
+      return eventData.response_id
+    }
+    return null
+  }
 
   const trySendPendingReminder = (): boolean => {
     if (!USE_REMINDER_PROMPT) return false
@@ -116,6 +258,23 @@ export function setupDataChannelHandlers(
       return true
     }
     return false
+  }
+
+  const scheduleReopenForCompletedAssistantTurn = (
+    reason: string,
+    responseId: string | null
+  ): void => {
+    if (reopenScheduledForCurrentResponse) return
+    if (responseId !== null && reopenScheduledResponseId === responseId) return
+    clearOutputStopFallbackTimer()
+    reopenScheduledForCurrentResponse = true
+    reopenScheduledResponseId = responseId
+    currentListeningWindowContaminated = false
+    rejectNextCompletedTranscript = false
+    turnGate.scheduleOpenAfterAssistantDone(reason)
+    console.log(
+      `🟢 [Turn Gate] reopen scheduled (reason: ${reason}, session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${responseId !== null})`
+    )
   }
 
   // Add onopen event handler to proactively configure the session as soon as the channel is open
@@ -155,10 +314,17 @@ export function setupDataChannelHandlers(
       // Track when an AI response begins
       if (data.type === 'response.created') {
         connectionState.currentResponseActive = true;
+        turnGate.closeForAssistantOutput('response.created')
         console.log(`🟡 [Realtime] response.created -> currentResponseActive = true (session: ${connectionState.sessionId}, transitionId: ${connectionState.transitionId})`);
 
         // Bind current stage to this response ID
-        const responseId = data.response?.id || data.response_id;
+        const responseId = getRealtimeResponseId(data)
+        activeAssistantResponseId = responseId
+        outputStoppedResponseId = null
+        responseDoneResponseId = null
+        reopenScheduledResponseId = null
+        reopenScheduledForCurrentResponse = false
+        clearOutputStopFallbackTimer()
 
         if (responseId) {
           addStageSnapshot(connectionState, responseId, currentStage);
@@ -259,12 +425,15 @@ export function setupDataChannelHandlers(
           break;
 
         case 'response.output_audio_buffer.started':
+          turnGate.closeForAssistantOutput('response.output_audio_buffer.started')
           break;
 
         case 'output_audio_buffer.started':
+          turnGate.closeForAssistantOutput('output_audio_buffer.started')
           break;
 
         case 'response.audio.delta':
+          turnGate.closeForAssistantOutput('response.audio.delta')
           break;
 
         case 'response.audio.done':
@@ -280,10 +449,37 @@ export function setupDataChannelHandlers(
           break;
 
         case 'output_audio_buffer.stopped':
+        case 'response.output_audio_buffer.stopped': {
+          const stoppedResponseId = getRealtimeResponseId(data)
+          const effectiveResponseId = stoppedResponseId ?? activeAssistantResponseId
+          outputStoppedResponseId = effectiveResponseId
           console.log(
-            `output_audio_buffer.stopped (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+            `output_audio_buffer.stopped observed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, hasResponseId: ${effectiveResponseId !== null}, hasDoneResponseId: ${responseDoneResponseId !== null})`
           );
+          if (effectiveResponseId === null) {
+            console.log(
+              `🟡 [Turn Gate] output stopped not tied to active response (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+            )
+            break
+          }
+          if (
+            activeAssistantResponseId !== null &&
+            effectiveResponseId !== activeAssistantResponseId
+          ) {
+            console.log(
+              `🟡 [Turn Gate] output stopped ignored (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: mismatched-response)`
+            )
+            break
+          }
+          if (
+            responseDoneResponseId === effectiveResponseId &&
+            connectionState.stageTransitionInProgress !== true &&
+            connectionState.currentResponseActive !== true
+          ) {
+            scheduleReopenForCompletedAssistantTurn('output-buffer-stopped', effectiveResponseId)
+          }
           break;
+        }
 
         // PHI FIX: Removed duplicate response.text.done handler - keeping only response.done for assistant
 
@@ -321,7 +517,9 @@ export function setupDataChannelHandlers(
           break;
 
         case 'response.done': {
-          const responseId = data.response?.id || data.response_id || `done_${Date.now()}`;
+          const realtimeResponseId = getRealtimeResponseId(data)
+          const responseId = realtimeResponseId ?? activeAssistantResponseId ?? `done_${Date.now()}`;
+          const boundaryResponseId = realtimeResponseId ?? activeAssistantResponseId
 
           // EMERGENCY DEDUP GUARD
           if (connectionState.processedResponseIds.has(responseId)) {
@@ -420,6 +618,9 @@ export function setupDataChannelHandlers(
               if (item.role === 'assistant') {
                 const transcript = item.content?.[0]?.transcript;
                 if (transcript) {
+                  console.log(
+                    `assistant transcript finalized (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${transcript.length}, transcriptHash: ${hashTranscriptForLog(transcript)})`
+                  )
                   callbacks.onAIResponse?.(transcript);
                   callbacks.onFinalAIResponse?.(transcript);
 
@@ -469,7 +670,62 @@ export function setupDataChannelHandlers(
             connectionState.audioWindowActive = false;
             console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
             console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-            trySendPendingReminder();
+            const reminderSent = trySendPendingReminder()
+            if (reminderSent === false && connectionState.stageTransitionInProgress !== true) {
+              responseDoneResponseId = boundaryResponseId
+              if (boundaryResponseId !== null && outputStoppedResponseId === boundaryResponseId) {
+                scheduleReopenForCompletedAssistantTurn('output-buffer-stopped', boundaryResponseId)
+              } else {
+                clearOutputStopFallbackTimer()
+                console.log(
+                  `🟡 [Turn Gate] response.done fallback scheduled (reason: response.done.fallback-scheduled, session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${boundaryResponseId !== null}, delayMs: ${OUTPUT_STOP_FALLBACK_MS})`
+                )
+                outputStopFallbackTimer = setTimeout(() => {
+                  outputStopFallbackTimer = null
+                  if (dataChannel.readyState !== 'open') {
+                    console.log(
+                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: channel-not-open)`
+                    )
+                    return
+                  }
+                  if (connectionState.currentResponseActive === true) {
+                    console.log(
+                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: response-active)`
+                    )
+                    return
+                  }
+                  if (connectionState.stageTransitionInProgress === true) {
+                    console.log(
+                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: stage-transition)`
+                    )
+                    return
+                  }
+                  if (
+                    boundaryResponseId !== null &&
+                    responseDoneResponseId !== boundaryResponseId
+                  ) {
+                    console.log(
+                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: response-done-mismatch)`
+                    )
+                    return
+                  }
+                  if (
+                    boundaryResponseId !== null &&
+                    activeAssistantResponseId !== null &&
+                    activeAssistantResponseId !== boundaryResponseId
+                  ) {
+                    console.log(
+                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: active-response-mismatch)`
+                    )
+                    return
+                  }
+                  console.log(
+                    `🟡 [Turn Gate] response.done fallback fired (reason: response.done.fallback-fired, session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${boundaryResponseId !== null})`
+                  )
+                  scheduleReopenForCompletedAssistantTurn('response.done.fallback', boundaryResponseId)
+                }, OUTPUT_STOP_FALLBACK_MS)
+              }
+            }
             if (currentStage !== Stage.Introduction) {
               console.log(`🟡 AI turn ended in stage ${Stage[currentStage]}. Waiting for user or function call.`);
             }
@@ -481,6 +737,14 @@ export function setupDataChannelHandlers(
 
         case 'conversation.item.input_audio_transcription.delta':
           if (data.delta?.text) {
+            if (turnGate.shouldIgnoreInput()) {
+              rejectNextCompletedTranscript = true
+              currentListeningWindowContaminated = true
+              console.log(
+                `partial transcript ignored: input closed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+              )
+              break
+            }
             callbacks.onPartialTranscript?.(data.delta.text);
 
             if (data.delta.text.trim()) {
@@ -501,6 +765,44 @@ export function setupDataChannelHandlers(
                   : undefined
             if (userItemId && connectionState.processedItemIds.has(userItemId)) {
               connectionState.userSpeechActive = false
+              rejectNextCompletedTranscript = false
+              currentListeningWindowContaminated = false
+              break
+            }
+            if (turnGate.shouldIgnoreInput()) {
+              if (userItemId) {
+                addItemId(connectionState, userItemId)
+              }
+              connectionState.userSpeechActive = false
+              rejectNextCompletedTranscript = false
+              currentListeningWindowContaminated = false
+              console.log(
+                `transcript rejected: input closed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+              )
+              break
+            }
+            if (rejectNextCompletedTranscript) {
+              if (userItemId) {
+                addItemId(connectionState, userItemId)
+              }
+              connectionState.userSpeechActive = false
+              rejectNextCompletedTranscript = false
+              currentListeningWindowContaminated = false
+              console.log(
+                `transcript rejected: stale contaminated window (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+              )
+              break
+            }
+            if (currentListeningWindowContaminated) {
+              if (userItemId) {
+                addItemId(connectionState, userItemId)
+              }
+              connectionState.userSpeechActive = false
+              rejectNextCompletedTranscript = false
+              currentListeningWindowContaminated = false
+              console.log(
+                `transcript rejected: contaminated (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+              )
               break
             }
             const userTranscript = d.transcript?.trim()
@@ -509,6 +811,8 @@ export function setupDataChannelHandlers(
                 addItemId(connectionState, userItemId)
               }
               connectionState.userSpeechActive = false
+              rejectNextCompletedTranscript = false
+              currentListeningWindowContaminated = false
               console.log(`🔵 [Stage Entry Guard] User speech completed (session: ${connectionState.sessionId})`);
               break
             }
@@ -529,10 +833,35 @@ export function setupDataChannelHandlers(
               `user transcript completed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${userTranscript.length}, transcriptHash: ${hashTranscriptForLog(userTranscript)})`
             )
             connectionState.userSpeechActive = false;
+            rejectNextCompletedTranscript = false
+            currentListeningWindowContaminated = false
+
+            if (currentStage !== Stage.Introduction && connectionState.stageTransitionInProgress !== true) {
+              turnGate.closeForAssistantOutput('accepted-user-turn')
+              const stagePrompt = getCompletedUserTurnPromptForStage(currentStage, baselineContext)
+              const schemaKey = getFunctionSchemaKey(currentStage)
+              const schemaContent = schemaKey ? getFunctionSchemaContent(schemaKey) : undefined
+              sendPromptInstruction(
+                dataChannel,
+                () => currentStage,
+                callbacks,
+                stagePrompt,
+                schemaContent,
+                { connectionState }
+              )
+            }
           }
           break;
 
         case 'input_audio_buffer.speech_started':
+          if (turnGate.shouldIgnoreInput()) {
+            currentListeningWindowContaminated = true
+            rejectNextCompletedTranscript = true
+            console.log(
+              `input contamination marked (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: speech_started while input closed)`
+            )
+            break
+          }
           connectionState.userSpeechActive = true;
           console.log(
             `speech_started.listening_window (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
@@ -547,6 +876,14 @@ export function setupDataChannelHandlers(
           break;
 
         case 'input_audio_buffer.committed':
+          if (turnGate.shouldIgnoreInput()) {
+            currentListeningWindowContaminated = true
+            rejectNextCompletedTranscript = true
+            console.log(
+              `input contamination marked (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: committed while input closed)`
+            )
+            break
+          }
           console.log(
             `input_audio_buffer.committed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
           );
@@ -568,8 +905,16 @@ export function setupDataChannelHandlers(
         }
 
         case 'conversation.item.truncated':
+          if (turnGate.shouldIgnoreInput() === false) {
+            currentListeningWindowContaminated = true
+            rejectNextCompletedTranscript = true
+            console.log(
+              `input contamination marked (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: conversation.item.truncated)`
+            )
+            break
+          }
           console.log(
-            `conversation.item.truncated (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+            `conversation.item.truncated (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
           );
           break;
 
@@ -584,10 +929,6 @@ export function setupDataChannelHandlers(
             clearTimeout(connectionState.stageEntryGuard.cancelWatchdog);
             connectionState.stageEntryGuard.cancelWatchdog = null;
             console.log(`🔵 [Stage Entry Guard] Cancel acknowledged (session: ${connectionState.sessionId})`);
-          }
-
-          {
-            trySendPendingReminder();
           }
           break;
 
@@ -628,6 +969,7 @@ export function setupDataChannelHandlers(
             'response.output_audio_buffer.cleared',
             'output_audio_buffer.cleared',
             'output_audio_buffer.stopped',
+            'response.output_audio_buffer.stopped',
             'response.audio.delta',
             'response.audio.done',
             'input_audio_buffer.speech_started',
@@ -655,13 +997,16 @@ export function setupDataChannelHandlers(
   });
 
   dataChannel.addEventListener('error', () => {
+    clearOutputStopFallbackTimer()
     turnGate.cleanup('data-channel-error');
     console.error(`🔴 [Realtime] DataChannel error (session: ${connectionState.sessionId})`);
     callbacks.onError(new Error('WebRTC data channel error occurred.'));
   });
 
   dataChannel.addEventListener('close', () => {
+    clearOutputStopFallbackTimer()
     turnGate.cleanup('data-channel-close');
+    connectionState.restoreListeningAfterBoundaryFailure = undefined
     console.log(`🔵 [Realtime] Data channel closed (session: ${connectionState.sessionId}).`);
 
     console.log(`🧹 [Cleanup] Performing comprehensive state cleanup on dataChannel close (session: ${connectionState.sessionId})`);
@@ -689,6 +1034,8 @@ export function setupDataChannelHandlers(
       return;
     }
     dataChannelCleanedUp = true;
+    connectionState.restoreListeningAfterBoundaryFailure = undefined
+    clearOutputStopFallbackTimer()
     turnGate.cleanup('connection-disconnect');
   };
 }

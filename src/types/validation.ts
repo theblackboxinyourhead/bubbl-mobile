@@ -137,8 +137,8 @@ const Stage2DataSchema = z
 
 export const PatientScreeningDetailSchema = z
   .object({
-    id: z.string(),
-    status: z.string(),
+    id: z.string().optional(),
+    status: z.string().nullable().optional(),
     resumeState: ResumeStateSchema.optional(),
     medicalHistory: MedicalHistorySchema.nullable().optional(),
     symptoms: z.array(SymptomEntrySchema).nullable().optional(),

@@ -84,6 +84,7 @@ export interface ConnectionState {
   stageEntryResponseTimeoutMs: number
   audioTrack?: MediaStreamTrack
   micMuted: boolean
+  restoreListeningAfterBoundaryFailure?: (reason: string) => void
 }
 
 export function createConnectionState(sessionId: string): ConnectionState {
@@ -143,7 +144,6 @@ export const audioConstraints: Record<string, unknown> = {
 }
 
 export const REALTIME_CONFIG = {
-  model: 'gpt-4o-mini-realtime-preview-2024-12-17',
   apiEndpoint: 'https://api.openai.com/v1/realtime',
 }
 

@@ -62,7 +62,7 @@ export async function initializeOpenAIRealtime(
   }
 
   const stageManager = createStageManager(Stage.Introduction)
-  const ephemeralKey = await getEphemeralAPIKey(screeningId)
+  const { ephemeralKey, model } = await getEphemeralAPIKey(screeningId)
   const peerConnection = new RTCPeerConnectionCtor(undefined)
 
   setupPeerConnectionHandlers(peerConnection, callbacks, connectionState)
@@ -105,8 +105,7 @@ export async function initializeOpenAIRealtime(
   })
   await peerConnection.setLocalDescription(offer)
 
-  const MODEL = REALTIME_CONFIG.model ?? 'gpt-4o-mini-realtime-preview-2024-12-17'
-  const url = `${REALTIME_CONFIG.apiEndpoint}?model=${MODEL}&modalities=text,audio`
+  const url = `${REALTIME_CONFIG.apiEndpoint}?model=${encodeURIComponent(model)}&modalities=text,audio`
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -136,6 +135,34 @@ export async function initializeOpenAIRealtime(
         return
     }
     if (nextStage !== null) {
+      if (connectionState.audioTrack) {
+        connectionState.audioTrack.enabled = false
+      }
+      connectionState.userSpeechActive = false
+      if (dataChannel.readyState === 'open') {
+        try {
+          dataChannel.send(
+            JSON.stringify({
+              type: 'session.update',
+              session: {
+                turn_detection: null,
+              },
+            })
+          )
+          dataChannel.send(
+            JSON.stringify({
+              type: 'input_audio_buffer.clear',
+            })
+          )
+          console.log(
+            `🟢 [Realtime] Stage button boundary sent VAD off + input clear (session: ${connectionState.sessionId})`
+          )
+        } catch (err) {
+          console.warn(
+            `🟡 [Realtime] Failed to send stage button boundary cleanup (session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
+          )
+        }
+      }
       performStageTransition(dataChannel, callbacks, stageManager, nextStage, connectionState, baselineContext)
     }
   }
@@ -201,12 +228,6 @@ export function startConversation(connection: RealtimeConnection, initialPrompt:
       greeted = true
       cleanup()
 
-      // Frontend parity: enable mic once session is configured (respect micMuted latch).
-      // After greeting response.create, enable server VAD for normal turn-taking.
-      if (connection.connectionState?.audioTrack) {
-        connection.connectionState.audioTrack.enabled = !connection.connectionState.micMuted
-      }
-
       if (connection.connectionState) {
         const expectedIntroTranscript = getPlainSpokenLineForGuard(Stage.Introduction)
         if (expectedIntroTranscript) {
@@ -230,15 +251,6 @@ export function startConversation(connection: RealtimeConnection, initialPrompt:
             },
           })
         )
-        connection.dataChannel.send(
-          JSON.stringify({
-            type: 'session.update',
-            session: {
-              turn_detection: { type: 'server_vad' },
-            },
-          })
-        )
-        console.log(`🟢 [Realtime] session.update sent (VAD on) (session: ${connection.connectionState?.sessionId})`)
       } catch (err) {
         console.error('[Realtime] Failed to send greeting:', err)
         return
