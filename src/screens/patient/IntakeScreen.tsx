@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, Pressable, StyleSheet, AppState, ActivityIndicator } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import InCallManager from 'react-native-incall-manager'
+import type { MediaStream } from 'react-native-webrtc'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import {
   appendTranscriptWithRetry,
@@ -39,6 +40,37 @@ function mapFinishError(e: unknown): string {
   return msg
 }
 
+function startIntakeAudioSession() {
+  InCallManager.start({ media: 'audio', ringback: '' })
+  InCallManager.stopRingback()
+  InCallManager.setKeepScreenOn(true)
+  InCallManager.setForceSpeakerphoneOn(false)
+  InCallManager.setSpeakerphoneOn(false)
+  const manager = InCallManager as typeof InCallManager & {
+    requestAudioFocus?: () => Promise<unknown>
+  }
+  if (typeof manager.requestAudioFocus === 'function') {
+    void manager.requestAudioFocus().catch((err: unknown) => {
+      console.warn('[Intake] requestAudioFocus failed:', err instanceof Error ? err.name : typeof err)
+    })
+  }
+}
+
+function stopIntakeAudioSession() {
+  InCallManager.setForceSpeakerphoneOn(false)
+  InCallManager.setSpeakerphoneOn(false)
+  InCallManager.setKeepScreenOn(false)
+  const manager = InCallManager as typeof InCallManager & {
+    abandonAudioFocus?: () => Promise<unknown>
+  }
+  if (typeof manager.abandonAudioFocus === 'function') {
+    void manager.abandonAudioFocus().catch((err: unknown) => {
+      console.warn('[Intake] abandonAudioFocus failed:', err instanceof Error ? err.name : typeof err)
+    })
+  }
+  InCallManager.stop()
+}
+
 export function IntakeScreen({ route, navigation }: Props) {
   const { screeningId, source } = route.params
   const [phaseLabel, setPhaseLabel] = useState('Setting up...')
@@ -46,6 +78,8 @@ export function IntakeScreen({ route, navigation }: Props) {
   const [currentPhase, setCurrentPhase] = useState<'medical-history' | 'symptoms'>('medical-history')
   const [finishing, setFinishing] = useState(false)
   const connRef = useRef<RealtimeConnection | null>(null)
+  const remoteAudioStreamRef = useRef<MediaStream | null>(null)
+  const finalSymptomsRealtimeSessionIdRef = useRef<string | null>(null)
   const userIdRef = useRef<string | null>(null)
   const currentPhaseRef = useRef(currentPhase)
   currentPhaseRef.current = currentPhase
@@ -76,60 +110,12 @@ export function IntakeScreen({ route, navigation }: Props) {
   const teardown = useCallback(() => {
     connRef.current?.disconnect()
     connRef.current = null
-    InCallManager.stop()
+    stopIntakeAudioSession()
   }, [])
-
-  const restoreListeningAfterBoundaryFailure = useCallback(
-    (phase: 'medical-history' | 'symptoms', reason: string) => {
-      const conn = connRef.current
-      if (!conn || conn.dataChannel.readyState !== 'open') {
-        return
-      }
-      if (conn.connectionState?.micMuted === true) {
-        if (conn.connectionState.audioTrack) {
-          conn.connectionState.audioTrack.enabled = false
-        }
-        console.log(
-          `🟡 [Intake] Boundary failure restore skipped (screeningId: ${screeningId}, session: ${conn.connectionState?.sessionId ?? 'unknown'}, phase: ${phase}, reason: mic-muted)`
-        )
-        return
-      }
-      if (!conn.connectionState?.restoreListeningAfterBoundaryFailure) {
-        console.log(
-          `🟡 [Intake] Boundary failure restore skipped (screeningId: ${screeningId}, session: ${conn.connectionState?.sessionId ?? 'unknown'}, phase: ${phase}, reason: missing-turn-gate-restore-callback)`
-        )
-        return
-      }
-      conn.connectionState.restoreListeningAfterBoundaryFailure(`${phase}:${reason}`)
-      console.log(
-        `🟢 [Intake] Boundary failure restore applied (screeningId: ${screeningId}, session: ${conn.connectionState?.sessionId ?? 'unknown'}, phase: ${phase}, reason: ${reason}, via: turnGate)`
-      )
-    },
-    [screeningId]
-  )
 
   const completeMedicalHistoryPhase = useCallback(
     async (realtimeSessionId: string | null) => {
       if (finishing) return
-      const conn = connRef.current
-      if (conn?.connectionState?.audioTrack) {
-        conn.connectionState.audioTrack.enabled = false
-      }
-      if (conn?.connectionState) {
-        conn.connectionState.userSpeechActive = false
-      }
-      if (conn?.dataChannel.readyState === 'open') {
-        conn.sendMessage({
-          type: 'session.update',
-          session: { turn_detection: null },
-        })
-        conn.sendMessage({
-          type: 'input_audio_buffer.clear',
-        })
-      }
-      console.log(
-        `🟢 [Intake] Button boundary cleanup (screeningId: ${screeningId}, session: ${conn?.connectionState?.sessionId ?? 'unknown'}, phase: medical-history)`
-      )
       setFinishing(true)
       setPhaseLabel('Saving medical history...')
       try {
@@ -147,58 +133,35 @@ export function IntakeScreen({ route, navigation }: Props) {
         await persistContext('symptoms')
         connRef.current?.manuallyCompleteCurrentStage?.()
       } catch (e) {
-        restoreListeningAfterBoundaryFailure(
-          'medical-history',
-          e instanceof Error ? e.name : typeof e
-        )
         setError(mapFinishError(e))
       } finally {
         setFinishing(false)
       }
     },
-    [finishing, persistContext, restoreListeningAfterBoundaryFailure, screeningId]
+    [finishing, persistContext, screeningId]
   )
 
   const completeSymptomsPhase = useCallback(
     async (realtimeSessionId: string | null) => {
       if (finishing) return
-      const conn = connRef.current
-      if (conn?.connectionState?.audioTrack) {
-        conn.connectionState.audioTrack.enabled = false
-      }
-      if (conn?.connectionState) {
-        conn.connectionState.userSpeechActive = false
-      }
-      if (conn?.dataChannel.readyState === 'open') {
-        conn.sendMessage({
-          type: 'session.update',
-          session: { turn_detection: null },
-        })
-        conn.sendMessage({
-          type: 'input_audio_buffer.clear',
-        })
-      }
-      console.log(
-        `🟢 [Intake] Button boundary cleanup (screeningId: ${screeningId}, session: ${conn?.connectionState?.sessionId ?? 'unknown'}, phase: symptoms)`
-      )
       setFinishing(true)
       setPhaseLabel('Saving symptoms...')
       try {
-        await structureSymptoms(screeningId, realtimeSessionId)
-        await generatePreliminaryAssessment(screeningId, realtimeSessionId)
+        const sid = realtimeSessionId ?? finalSymptomsRealtimeSessionIdRef.current
+        finalSymptomsRealtimeSessionIdRef.current = sid
         teardown()
+        await structureSymptoms(screeningId, sid)
+        await generatePreliminaryAssessment(screeningId, sid)
         navigation.replace('ReviewConfirm', { screeningId, source })
+        finalSymptomsRealtimeSessionIdRef.current = null
+        remoteAudioStreamRef.current = null
       } catch (e) {
-        restoreListeningAfterBoundaryFailure(
-          'symptoms',
-          e instanceof Error ? e.name : typeof e
-        )
         setError(mapFinishError(e))
       } finally {
         setFinishing(false)
       }
     },
-    [finishing, navigation, restoreListeningAfterBoundaryFailure, screeningId, source, teardown]
+    [finishing, navigation, screeningId, source, teardown]
   )
 
   completeMedicalHistoryPhaseRef.current = completeMedicalHistoryPhase
@@ -209,7 +172,7 @@ export function IntakeScreen({ route, navigation }: Props) {
   }, [currentPhase, persistContext])
 
   useEffect(() => {
-    InCallManager.start({ media: 'audio', ringback: '' })
+    startIntakeAudioSession()
     let cancelled = false
 
     void (async () => {
@@ -260,7 +223,16 @@ export function IntakeScreen({ route, navigation }: Props) {
           {
             onTranscript: () => undefined,
             onAIResponse: () => undefined,
-            onError: (err) => setError(err.message),
+            onError: (err) => {
+              teardown()
+              setError(err.message)
+            },
+            onAudioTrack: (stream) => {
+              remoteAudioStreamRef.current = stream
+              console.log(
+                `🔊 [Intake] Remote audio arrived (audioTrackCount: ${stream.getAudioTracks().length})`
+              )
+            },
             onConversationComplete: () => {
               if (currentPhaseRef.current !== 'medical-history') return
               const sid = connRef.current?.connectionState?.sessionId ?? null
@@ -305,6 +277,7 @@ export function IntakeScreen({ route, navigation }: Props) {
               return
             }
             if (parsed.code === 'SCREENING_START_CONFLICT') {
+              teardown()
               setError(
                 parsed.message ??
                   parsed.error ??
@@ -314,6 +287,7 @@ export function IntakeScreen({ route, navigation }: Props) {
             }
           }
         }
+        teardown()
         setError('Could not start intake.')
       }
     })()
@@ -327,13 +301,18 @@ export function IntakeScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true
       teardown()
+      remoteAudioStreamRef.current = null
+      finalSymptomsRealtimeSessionIdRef.current = null
       sub.remove()
     }
   }, [navigation, persistContext, screeningId, source, teardown])
 
   const handleContinue = async () => {
     if (finishing) return
-    const sid = connRef.current?.connectionState?.sessionId ?? null
+    const sid =
+      connRef.current?.connectionState?.sessionId ??
+      finalSymptomsRealtimeSessionIdRef.current ??
+      null
     if (currentPhase === 'medical-history') {
       await completeMedicalHistoryPhase(sid)
       return

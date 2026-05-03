@@ -135,34 +135,6 @@ export async function initializeOpenAIRealtime(
         return
     }
     if (nextStage !== null) {
-      if (connectionState.audioTrack) {
-        connectionState.audioTrack.enabled = false
-      }
-      connectionState.userSpeechActive = false
-      if (dataChannel.readyState === 'open') {
-        try {
-          dataChannel.send(
-            JSON.stringify({
-              type: 'session.update',
-              session: {
-                turn_detection: null,
-              },
-            })
-          )
-          dataChannel.send(
-            JSON.stringify({
-              type: 'input_audio_buffer.clear',
-            })
-          )
-          console.log(
-            `🟢 [Realtime] Stage button boundary sent VAD off + input clear (session: ${connectionState.sessionId})`
-          )
-        } catch (err) {
-          console.warn(
-            `🟡 [Realtime] Failed to send stage button boundary cleanup (session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
-          )
-        }
-      }
       performStageTransition(dataChannel, callbacks, stageManager, nextStage, connectionState, baselineContext)
     }
   }
@@ -227,6 +199,11 @@ export function startConversation(connection: RealtimeConnection, initialPrompt:
       if (greeted) return
       greeted = true
       cleanup()
+
+      const audioTrack = connection.connectionState?.audioTrack
+      if (audioTrack) {
+        audioTrack.enabled = !(connection.connectionState?.micMuted ?? false)
+      }
 
       if (connection.connectionState) {
         const expectedIntroTranscript = getPlainSpokenLineForGuard(Stage.Introduction)

@@ -155,29 +155,6 @@ export function getSystemPromptForStage(stage: Stage, baselineContext?: Baseline
   }
 }
 
-export function getCompletedUserTurnPromptForStage(stage: Stage, baselineContext?: BaselineContext): string {
-  const basePrompt = getSystemPromptForStage(stage, baselineContext);
-
-  switch (stage) {
-    case Stage.MedicalHistory:
-      return (
-        basePrompt +
-        " This response is after the patient already answered in Medical History. Continue within Medical History only. Ask one or two brief follow-up questions based on what details are still missing. Do not repeat the Medical History stage-entry line. Do not tell the patient to tap 'Submit History' unless they clearly have nothing else to add."
-      );
-
-    case Stage.Symptoms:
-      return (
-        basePrompt +
-        " This response is after the patient already answered in Symptoms. Continue within Symptoms only. Ask one or two brief follow-up questions about details still missing for the current concern, such as onset, duration, severity, location, triggers, relieving factors, associated symptoms, or baseline symptom changes when baseline context exists. Do not repeat the Symptoms stage-entry line. Do not say \"Let's start with your symptoms\" after the patient has already started answering. Do not tell the patient to tap 'Finish Screening' unless they clearly have nothing else to add."
-      );
-
-    case Stage.Introduction:
-    case Stage.Conclusion:
-    default:
-      return basePrompt;
-  }
-}
-
 // ==========================================
 // PROMPT HELPERS & BUILDERS
 // ==========================================

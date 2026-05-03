@@ -4,8 +4,8 @@
  */
 import { Stage, RealtimeCallbacks, MemoryItem, ConnectionState, addResponseId, addItemId, addStageSnapshot, type RTCDataChannel } from '@/lib/openai/webrtc/types';
 import { sendPromptInstruction } from '@/lib/openai/webrtc/utils';
-import { getCompletedUserTurnPromptForStage, getSystemPromptForStage } from '@/lib/openai/prompts';
 import { getFunctionSchemaContent, getFunctionSchemaKey } from '@/lib/openai/webrtc/prompts';
+import { getSystemPromptForStage } from '@/lib/openai/prompts';
 import { createStageManager } from '@/lib/openai/webrtc/stageManager';
 import { REMINDER_FREQUENCY, REMINDER_BY_PHASE, ScreeningPhase, USE_REMINDER_PROMPT } from '@/lib/openai/prompts/reminderConfig';
 import {
@@ -19,7 +19,6 @@ import { BaselineContext } from '@/types/baseline';
 import { cleanupAudioElements } from '@/lib/openai/webrtc/handlers.audio';
 import { handleFunctionCall } from '@/lib/openai/webrtc/handlers.functionCalls';
 import { performStageTransition } from '@/lib/openai/webrtc/handlers.stageTransition';
-import { createRealtimeTurnGate } from '@/lib/openai/webrtc/turnGate';
 
 /** BFF append-transcript with Bearer auth + stable idempotency key (see api/screenings). */
 export type AppendTranscriptHandler = (
@@ -65,15 +64,135 @@ export function setupDataChannelHandlers(
   let introTransitionSent = false;
   let userTurnCount = 0; // 🔔 Track user turns for this connection
   let pendingReminderPhase: ScreeningPhase | null = null; // remember phase when we owe a reminder
-  let currentListeningWindowContaminated = false;
-  let rejectNextCompletedTranscript = false;
   let activeAssistantResponseId: string | null = null
   let outputStoppedResponseId: string | null = null
   let responseDoneResponseId: string | null = null
-  let reopenScheduledResponseId: string | null = null
-  let reopenScheduledForCurrentResponse = false
+  let playbackReleasedResponseId: string | null = null
+  let stageEntryRetryOwnsNextBoundary = false
+  let serverVadEnabled = false
   let outputStopFallbackTimer: ReturnType<typeof setTimeout> | null = null
-  const OUTPUT_STOP_FALLBACK_MS = 5000
+  let vadEnableQuarantineTimer: ReturnType<typeof setTimeout> | null = null
+  const RN_PLAYBACK_DRAIN_MIN_MS = 1200
+  const RN_PLAYBACK_DRAIN_MAX_MS = 6500
+  const RN_PLAYBACK_DRAIN_MS_PER_CHAR = 45
+  const VAD_REENABLE_QUARANTINE_MS = 200
+  const POST_ASSISTANT_ECHO_WINDOW_MS = 2500
+  const REPEATED_ECHO_SUPPRESS_MS = 10000
+  let pendingIntroTransitionResponseId: string | null = null
+  let pendingIntroTransitionTranscriptLength = 0
+
+  let lastAssistantTranscriptForEchoCheck: string | null = null
+  let vadEnabledAtMs = 0
+  let truncatedSinceVadEnable = false
+  let lastRejectedEchoHash: string | null = null
+  let lastRejectedEchoAtMs = 0
+  let inputWindowContaminated = false
+  let rejectNextCompletedTranscript = false
+  let rejectContaminatedTranscriptUntilMs = 0
+
+  const getCompletedUserTurnInstructions = (stage: Stage): string => {
+    const basePrompt = getSystemPromptForStage(stage, baselineContext)
+    if (stage === Stage.MedicalHistory) {
+      return basePrompt + ` This response is after the patient already answered in Medical History. Continue within Medical History only. Ask one or two brief follow-up questions based on what details are still missing. Do not repeat the Medical History stage-entry line. Do not tell the patient to tap 'Submit History' unless they clearly have nothing else to add.`
+    }
+    if (stage === Stage.Symptoms) {
+      return basePrompt + ` This response is after the patient already answered in Symptoms. Continue within Symptoms only. Ask one or two brief follow-up questions about details still missing for the current concern, such as onset, duration, severity, location, triggers, relieving factors, associated symptoms, or baseline symptom changes when baseline context exists. Do not repeat the Symptoms stage-entry line. Do not say "Let's start with your symptoms" after the patient has already started answering. Do not tell the patient to tap 'Finish Screening' unless they clearly have nothing else to add.`
+    }
+    return basePrompt
+  }
+
+  const normalizeEchoText = (value: string): string => {
+    return value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  const isPostAssistantWindow = (): boolean => {
+    return vadEnabledAtMs > 0 && Date.now() - vadEnabledAtMs <= POST_ASSISTANT_ECHO_WINDOW_MS
+  }
+
+  const clearExpiredContamination = (now: number = Date.now()): boolean => {
+    if (
+      (inputWindowContaminated || rejectNextCompletedTranscript) &&
+      now > rejectContaminatedTranscriptUntilMs
+    ) {
+      inputWindowContaminated = false
+      rejectNextCompletedTranscript = false
+      rejectContaminatedTranscriptUntilMs = 0
+    }
+    return inputWindowContaminated || rejectNextCompletedTranscript
+  }
+
+  const rejectCompletedInput = (
+    reason: string,
+    userItemId: string | undefined,
+    transcriptLength?: number,
+    transcriptHash?: string
+  ): void => {
+    if (userItemId) {
+      addItemId(connectionState, userItemId)
+    }
+    connectionState.userSpeechActive = false
+    inputWindowContaminated = false
+    rejectNextCompletedTranscript = false
+    rejectContaminatedTranscriptUntilMs = 0
+    if (dataChannel.readyState === 'open') {
+      try {
+        dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.clear' }))
+      } catch (clearErr) {
+        console.warn(
+          `🟡 [Realtime Echo] input_audio_buffer.clear failed during contamination reject (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, errorType: ${clearErr instanceof Error ? clearErr.name : typeof clearErr})`
+        )
+      }
+    }
+    console.log(
+      `🟡 [Realtime Echo] contaminated input rejected (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, transcriptLength: ${transcriptLength ?? 0}, transcriptHash: ${transcriptHash ?? 'none'})`
+    )
+  }
+
+  const isLikelyPostAssistantEcho = (userTranscript: string): boolean => {
+    const now = Date.now()
+    const inEchoWindow = isPostAssistantWindow()
+    const suspicious = inEchoWindow
+    if (!suspicious) {
+      return false
+    }
+    const normalizedUser = normalizeEchoText(userTranscript)
+    if (normalizedUser.length === 0) {
+      return false
+    }
+    const normalizedAssistant = lastAssistantTranscriptForEchoCheck
+      ? normalizeEchoText(lastAssistantTranscriptForEchoCheck)
+      : ''
+
+    if (normalizedAssistant.length > 0) {
+      if (
+        normalizedUser.length >= 12 &&
+        normalizedUser.length <= 80 &&
+        normalizedAssistant.includes(normalizedUser)
+      ) {
+        return true
+      }
+      const prefixLen = Math.min(normalizedUser.length, normalizedAssistant.length)
+      if (prefixLen >= 12) {
+        const assistantPrefix = normalizedAssistant.slice(0, prefixLen).trim()
+        if (assistantPrefix.length >= 12 && normalizedUser.includes(assistantPrefix)) {
+          return true
+        }
+      }
+    }
+
+    if (
+      lastRejectedEchoHash !== null &&
+      now - lastRejectedEchoAtMs <= REPEATED_ECHO_SUPPRESS_MS &&
+      hashTranscriptForLog(normalizedUser) === lastRejectedEchoHash
+    ) {
+      return true
+    }
+    return false
+  }
 
   const clearOutputStopFallbackTimer = (): void => {
     if (outputStopFallbackTimer !== null) {
@@ -82,68 +201,163 @@ export function setupDataChannelHandlers(
     }
   }
 
-  const turnGate = createRealtimeTurnGate({
-    sessionId: connectionState.sessionId,
-    openInput: (reason) => {
-      const t = connectionState.audioTrack
-      if (!t) return
-      if (t.enabled) return
-      t.enabled = true
+  const clearVadEnableQuarantineTimer = (): void => {
+    if (vadEnableQuarantineTimer !== null) {
+      clearTimeout(vadEnableQuarantineTimer)
+      vadEnableQuarantineTimer = null
+    }
+  }
+
+  const clearPendingIntroTransition = (): void => {
+    pendingIntroTransitionResponseId = null
+    pendingIntroTransitionTranscriptLength = 0
+  }
+
+  const getPlaybackDrainMs = (transcriptLength: number): number => {
+    const computed = transcriptLength * RN_PLAYBACK_DRAIN_MS_PER_CHAR
+    return Math.min(RN_PLAYBACK_DRAIN_MAX_MS, Math.max(RN_PLAYBACK_DRAIN_MIN_MS, computed))
+  }
+
+  const cleanupRealtimeBoundary = (reason: string): void => {
+    activeAssistantResponseId = null
+    outputStoppedResponseId = null
+    responseDoneResponseId = null
+    playbackReleasedResponseId = null
+    stageEntryRetryOwnsNextBoundary = false
+    serverVadEnabled = false
+    lastAssistantTranscriptForEchoCheck = null
+    vadEnabledAtMs = 0
+    truncatedSinceVadEnable = false
+    lastRejectedEchoHash = null
+    lastRejectedEchoAtMs = 0
+    clearOutputStopFallbackTimer()
+    clearVadEnableQuarantineTimer()
+    clearPendingIntroTransition()
+    pendingReminderPhase = null
+    if (connectionState.audioTrack) {
+      connectionState.audioTrack.enabled = false
+    }
+    console.log(
+      `🧹 [Realtime Boundary] terminal cleanup (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason})`
+    )
+  }
+
+  const clearResponseBoundState = (responseId: string | null): void => {
+    if (responseId === null) {
+      activeAssistantResponseId = null
+      outputStoppedResponseId = null
+      responseDoneResponseId = null
+      playbackReleasedResponseId = null
+      clearOutputStopFallbackTimer()
+      clearVadEnableQuarantineTimer()
+      clearPendingIntroTransition()
+      return
+    }
+    if (activeAssistantResponseId === responseId) {
+      activeAssistantResponseId = null
+    }
+    if (outputStoppedResponseId === responseId) {
+      outputStoppedResponseId = null
+    }
+    if (responseDoneResponseId === responseId) {
+      responseDoneResponseId = null
+    }
+    if (pendingIntroTransitionResponseId === responseId) {
+      clearPendingIntroTransition()
+    }
+    clearOutputStopFallbackTimer()
+    clearVadEnableQuarantineTimer()
+  }
+
+  const disableVad = (reason: string): void => {
+    if (!serverVadEnabled) {
+      return
+    }
+    if (dataChannel.readyState !== 'open') {
       console.log(
-        `🎤 [Turn Gate] input opened (${reason}, session: ${connectionState.sessionId})`
+        `🟡 [Realtime VAD] disable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, channel: ${dataChannel.readyState})`
       )
-    },
-    closeInput: (reason) => {
-      const t = connectionState.audioTrack
-      if (!t) return
-      if (!t.enabled) return
-      t.enabled = false
+      return
+    }
+    try {
+      dataChannel.send(
+        JSON.stringify({
+          type: 'session.update',
+          session: {
+            turn_detection: null,
+          },
+        })
+      )
+      serverVadEnabled = false
+      truncatedSinceVadEnable = false
       console.log(
-        `🎤 [Turn Gate] input closed (${reason}, session: ${connectionState.sessionId})`
+        `🟢 [Realtime VAD] disabled (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason})`
       )
-    },
-    isInputOpen: () => connectionState.audioTrack?.enabled === true,
-    canOpenInput: () =>
-      !connectionState.micMuted &&
-      !connectionState.currentResponseActive &&
-      !connectionState.audioWindowActive &&
-      !connectionState.stageTransitionInProgress,
-    isSessionOpen: () => dataChannel.readyState === 'open',
-    disableTurnDetection: (reason) => {
+    } catch (err) {
+      console.warn(
+        `🟡 [Realtime VAD] disable failed (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, errorType: ${err instanceof Error ? err.name : typeof err})`
+      )
+    }
+  }
+
+  const scheduleEnableVad = (reason: string, scheduledResponseId: string | null): void => {
+    clearVadEnableQuarantineTimer()
+    vadEnableQuarantineTimer = setTimeout(() => {
+      vadEnableQuarantineTimer = null
       if (dataChannel.readyState !== 'open') {
         console.log(
-          `🟡 [Turn Gate] disableTurnDetection skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
+          `🟡 [Realtime VAD] enable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, skip: channel-not-open)`
         )
-        return false
+        return
+      }
+      if (connectionState.currentResponseActive === true) {
+        console.log(
+          `🟡 [Realtime VAD] enable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, skip: response-active)`
+        )
+        return
+      }
+      if (connectionState.stageTransitionInProgress === true) {
+        console.log(
+          `🟡 [Realtime VAD] enable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, skip: stage-transition)`
+        )
+        return
+      }
+      if (connectionState.audioWindowActive === true) {
+        console.log(
+          `🟡 [Realtime VAD] enable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, skip: audio-window-active)`
+        )
+        return
+      }
+      if (scheduledResponseId !== null) {
+        if (responseDoneResponseId !== scheduledResponseId) {
+          console.log(
+            `🟡 [Realtime VAD] enable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, skip: response-done-mismatch, hasResponseId: true)`
+          )
+          return
+        }
+        const hasOutputBoundary =
+          outputStoppedResponseId === scheduledResponseId ||
+          reason === 'response.done.fallback'
+        if (!hasOutputBoundary) {
+          console.log(
+            `🟡 [Realtime VAD] enable skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, skip: output-boundary-missing, hasResponseId: true)`
+          )
+          return
+        }
+      } else {
+        console.log(
+          `🟡 [Realtime VAD] enable response-id check skipped intentionally (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason})`
+        )
+      }
+      if (serverVadEnabled) {
+        return
       }
       try {
         dataChannel.send(
           JSON.stringify({
-            type: 'session.update',
-            session: {
-              turn_detection: null,
-            },
+            type: 'input_audio_buffer.clear',
           })
         )
-        console.log(
-          `🟢 [Turn Gate] disableTurnDetection sent (reason: ${reason}, session: ${connectionState.sessionId})`
-        )
-        return true
-      } catch (err) {
-        console.warn(
-          `🟡 [Turn Gate] disableTurnDetection failed (reason: ${reason}, session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
-        )
-        return false
-      }
-    },
-    enableTurnDetection: (reason) => {
-      if (dataChannel.readyState !== 'open') {
-        console.log(
-          `🟡 [Turn Gate] enableTurnDetection skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
-        )
-        return false
-      }
-      try {
         dataChannel.send(
           JSON.stringify({
             type: 'session.update',
@@ -156,73 +370,21 @@ export function setupDataChannelHandlers(
             },
           })
         )
+        serverVadEnabled = true
+        vadEnabledAtMs = Date.now()
+        truncatedSinceVadEnable = false
+        inputWindowContaminated = false
+        rejectNextCompletedTranscript = false
+        rejectContaminatedTranscriptUntilMs = 0
         console.log(
-          `🟢 [Turn Gate] enableTurnDetection sent (reason: ${reason}, session: ${connectionState.sessionId})`
+          `🟢 [Realtime VAD] enabled (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, hasResponseId: ${scheduledResponseId !== null}, autoCreate: false)`
         )
-        return true
       } catch (err) {
         console.warn(
-          `🟡 [Turn Gate] enableTurnDetection failed (reason: ${reason}, session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
+          `🟡 [Realtime VAD] enable failed (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: ${reason}, errorType: ${err instanceof Error ? err.name : typeof err})`
         )
-        return false
       }
-    },
-    clearInputBuffer: (reason) => {
-      if (dataChannel.readyState !== 'open') {
-        console.log(
-          `🟡 [Turn Gate] clearInputBuffer skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
-        )
-        return false
-      }
-      try {
-        dataChannel.send(
-          JSON.stringify({
-            type: 'input_audio_buffer.clear',
-          })
-        )
-        console.log(
-          `🟢 [Turn Gate] clearInputBuffer sent (reason: ${reason}, session: ${connectionState.sessionId})`
-        )
-        return true
-      } catch (err) {
-        console.warn(
-          `🟡 [Turn Gate] clearInputBuffer failed (reason: ${reason}, session: ${connectionState.sessionId}, errorType: ${err instanceof Error ? err.name : typeof err})`
-        )
-        return false
-      }
-    },
-    log: (message) => {
-      console.log(`[TurnGate] ${message}`)
-    },
-  })
-
-  connectionState.restoreListeningAfterBoundaryFailure = (reason) => {
-    if (dataChannel.readyState !== 'open') {
-      console.log(
-        `🟡 [Turn Gate] boundary failure restore skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: ${dataChannel.readyState})`
-      )
-      return
-    }
-    if (connectionState.micMuted) {
-      const track = connectionState.audioTrack
-      if (track) {
-        track.enabled = false
-      }
-      console.log(
-        `🟡 [Turn Gate] boundary failure restore skipped (reason: ${reason}, session: ${connectionState.sessionId}, state: mic-muted)`
-      )
-      return
-    }
-    connectionState.currentResponseActive = false
-    connectionState.audioWindowActive = false
-    connectionState.userSpeechActive = false
-    currentListeningWindowContaminated = false
-    rejectNextCompletedTranscript = false
-    clearOutputStopFallbackTimer()
-    turnGate.scheduleOpenAfterAssistantDone(`boundary-failure:${reason}`)
-    console.log(
-      `🟢 [Turn Gate] boundary failure restore scheduled (reason: ${reason}, session: ${connectionState.sessionId})`
-    )
+    }, VAD_REENABLE_QUARANTINE_MS)
   }
 
   const getRealtimeResponseId = (data: unknown): string | null => {
@@ -260,23 +422,6 @@ export function setupDataChannelHandlers(
     return false
   }
 
-  const scheduleReopenForCompletedAssistantTurn = (
-    reason: string,
-    responseId: string | null
-  ): void => {
-    if (reopenScheduledForCurrentResponse) return
-    if (responseId !== null && reopenScheduledResponseId === responseId) return
-    clearOutputStopFallbackTimer()
-    reopenScheduledForCurrentResponse = true
-    reopenScheduledResponseId = responseId
-    currentListeningWindowContaminated = false
-    rejectNextCompletedTranscript = false
-    turnGate.scheduleOpenAfterAssistantDone(reason)
-    console.log(
-      `🟢 [Turn Gate] reopen scheduled (reason: ${reason}, session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${responseId !== null})`
-    )
-  }
-
   // Add onopen event handler to proactively configure the session as soon as the channel is open
   dataChannel.addEventListener('open', () => {
     console.log('🟢 [Realtime] DataChannel opened. Sending session.update (VAD off) for text+audio modalities.');
@@ -297,6 +442,7 @@ export function setupDataChannelHandlers(
 
     try {
       dataChannel.send(JSON.stringify(sessionUpdateMessage));
+      serverVadEnabled = false
       console.log(`🟢 [Realtime] session.update sent successfully with stage-specific instructions for ${Stage[currentStage]}!`);
     } catch (err) {
       console.error('🔴 [Realtime] Failed to send session.update:', err);
@@ -314,17 +460,19 @@ export function setupDataChannelHandlers(
       // Track when an AI response begins
       if (data.type === 'response.created') {
         connectionState.currentResponseActive = true;
-        turnGate.closeForAssistantOutput('response.created')
         console.log(`🟡 [Realtime] response.created -> currentResponseActive = true (session: ${connectionState.sessionId}, transitionId: ${connectionState.transitionId})`);
 
         // Bind current stage to this response ID
         const responseId = getRealtimeResponseId(data)
+        clearPendingIntroTransition()
         activeAssistantResponseId = responseId
         outputStoppedResponseId = null
         responseDoneResponseId = null
-        reopenScheduledResponseId = null
-        reopenScheduledForCurrentResponse = false
+        playbackReleasedResponseId = null
+        stageEntryRetryOwnsNextBoundary = false
         clearOutputStopFallbackTimer()
+        clearVadEnableQuarantineTimer()
+        disableVad('response.created')
 
         if (responseId) {
           addStageSnapshot(connectionState, responseId, currentStage);
@@ -344,10 +492,16 @@ export function setupDataChannelHandlers(
           connectionState.stageEntryGuard.transcriptTimeout = setTimeout(() => {
             if (connectionState.stageEntryExpectation?.pendingResponseId === responseId) {
               console.warn(`🟡 [Stage Entry Guard] Transcript timeout after ${STAGE_ENTRY_TRANSCRIPT_TIMEOUT_MS}ms (session: ${connectionState.sessionId})`);
-              retryStageEntryPrompt(dataChannel, callbacks, connectionState).catch(err => {
-                console.error('🔴 [Stage Entry Guard] Retry failed after transcript timeout:', err);
-                clearStageEntryGuard(connectionState, 'transcript-timeout-error');
-              });
+              retryStageEntryPrompt(dataChannel, callbacks, connectionState)
+                .then((didRetry) => {
+                  if (didRetry) {
+                    stageEntryRetryOwnsNextBoundary = true
+                  }
+                })
+                .catch(err => {
+                  console.error('🔴 [Stage Entry Guard] Retry failed after transcript timeout:', err);
+                  clearStageEntryGuard(connectionState, 'transcript-timeout-error');
+                });
             }
           }, STAGE_ENTRY_TRANSCRIPT_TIMEOUT_MS);
 
@@ -425,21 +579,35 @@ export function setupDataChannelHandlers(
           break;
 
         case 'response.output_audio_buffer.started':
-          turnGate.closeForAssistantOutput('response.output_audio_buffer.started')
-          break;
-
         case 'output_audio_buffer.started':
-          turnGate.closeForAssistantOutput('output_audio_buffer.started')
+          console.log(
+            `${data.type} (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+          );
           break;
 
         case 'response.audio.delta':
-          turnGate.closeForAssistantOutput('response.audio.delta')
+          // Diagnostic-only: output lifecycle events own VAD boundaries.
           break;
 
         case 'response.audio.done':
-          console.log(
-            `response.audio.done (diagnostic) (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
-          );
+          {
+            const doneResponseId = getRealtimeResponseId(data) ?? activeAssistantResponseId
+            console.log(
+              `response.audio.done (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, hasResponseId: ${doneResponseId !== null})`
+            );
+            if (doneResponseId === null) {
+              break
+            }
+            if (
+              activeAssistantResponseId !== null &&
+              doneResponseId !== activeAssistantResponseId
+            ) {
+              console.log(
+                `🟡 [Realtime VAD] response.audio.done ignored (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: active-response-mismatch)`
+              )
+              break
+            }
+          }
           break;
 
         case 'response.output_audio_buffer.cleared':
@@ -452,13 +620,12 @@ export function setupDataChannelHandlers(
         case 'response.output_audio_buffer.stopped': {
           const stoppedResponseId = getRealtimeResponseId(data)
           const effectiveResponseId = stoppedResponseId ?? activeAssistantResponseId
-          outputStoppedResponseId = effectiveResponseId
           console.log(
             `output_audio_buffer.stopped observed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, hasResponseId: ${effectiveResponseId !== null}, hasDoneResponseId: ${responseDoneResponseId !== null})`
           );
           if (effectiveResponseId === null) {
             console.log(
-              `🟡 [Turn Gate] output stopped not tied to active response (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+              `🟡 [Realtime VAD] output stopped not tied to active response (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
             )
             break
           }
@@ -467,8 +634,50 @@ export function setupDataChannelHandlers(
             effectiveResponseId !== activeAssistantResponseId
           ) {
             console.log(
-              `🟡 [Turn Gate] output stopped ignored (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: mismatched-response)`
+              `🟡 [Realtime VAD] output stopped ignored (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: mismatched-response)`
             )
+            break
+          }
+          if (playbackReleasedResponseId === effectiveResponseId) {
+            console.log(
+              `🟡 [Realtime VAD] duplicate real output-stopped release skipped (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: already-released)`
+            )
+            break
+          }
+          outputStoppedResponseId = effectiveResponseId
+          if (pendingIntroTransitionResponseId === effectiveResponseId) {
+            clearOutputStopFallbackTimer()
+            if (stageManager.getStage() !== Stage.Introduction) {
+              clearPendingIntroTransition()
+              console.log(
+                `🟡 [Realtime VAD] Introduction transition release skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: stage-not-introduction)`
+              )
+              break
+            }
+            console.log(
+              `🟢 [Realtime VAD] Introduction playback reached real output stopped before transition (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, transcriptLength: ${pendingIntroTransitionTranscriptLength})`
+            )
+            clearPendingIntroTransition()
+            playbackReleasedResponseId = effectiveResponseId
+            connectionState.audioWindowActive = false
+            console.log(`🔇 [Audio Gate] Closing audio window at real output stopped (session: ${connectionState.sessionId})`)
+            performStageTransition(dataChannel, callbacks, stageManager, nextStageAfterIntro, connectionState, baselineContext)
+            break
+          }
+          if (
+            responseDoneResponseId === effectiveResponseId &&
+            connectionState.currentResponseActive !== true &&
+            connectionState.stageTransitionInProgress !== true &&
+            pendingReminderPhase !== null
+          ) {
+            clearOutputStopFallbackTimer()
+            playbackReleasedResponseId = effectiveResponseId
+            connectionState.audioWindowActive = false
+            console.log(
+              `🟢 [Realtime VAD] playback reached real output stopped before sending queued reminder (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]})`
+            )
+            clearResponseBoundState(effectiveResponseId)
+            trySendPendingReminder()
             break
           }
           if (
@@ -476,7 +685,13 @@ export function setupDataChannelHandlers(
             connectionState.stageTransitionInProgress !== true &&
             connectionState.currentResponseActive !== true
           ) {
-            scheduleReopenForCompletedAssistantTurn('output-buffer-stopped', effectiveResponseId)
+            clearOutputStopFallbackTimer()
+            connectionState.audioWindowActive = false
+            console.log(
+              `🔇 [Audio Gate] Closing audio window at real output stopped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]})`
+            )
+            playbackReleasedResponseId = effectiveResponseId
+            scheduleEnableVad('output-buffer-stopped', effectiveResponseId)
           }
           break;
         }
@@ -527,6 +742,7 @@ export function setupDataChannelHandlers(
             break;
           }
           addResponseId(connectionState, responseId);
+          let stageRetryScheduled = false
 
           // Stage Entry Guard: Check for match/mismatch
           if (connectionState.stageEntryExpectation && connectionState.stageEntryGuard) {
@@ -534,10 +750,7 @@ export function setupDataChannelHandlers(
             if (!connectionState.stageEntryExpectation.pendingResponseId) {
               console.warn(`🟡 [Stage Entry Guard] Missing response ID in response.done (session: ${connectionState.sessionId})`);
               clearStageEntryGuard(connectionState, 'missing-response-id');
-              break;
-            }
-
-            if (responseId === connectionState.stageEntryExpectation.pendingResponseId) {
+            } else if (responseId === connectionState.stageEntryExpectation.pendingResponseId) {
 
               // Extract observed transcript
               let observedText = connectionState.stageEntryGuard.guardBuffer;
@@ -604,20 +817,33 @@ export function setupDataChannelHandlers(
                 // Trigger retry
                 const didRetry = await retryStageEntryPrompt(dataChannel, callbacks, connectionState);
                 if (didRetry) {
-                  // Don't process transcript normally when retrying
-                  break;
+                  connectionState.currentResponseActive = false;
+                  connectionState.audioWindowActive = false;
+                  stageEntryRetryOwnsNextBoundary = true
+                  clearResponseBoundState(responseId);
+                  if (connectionState.stageSnapshots.has(responseId)) {
+                    connectionState.stageSnapshots.delete(responseId);
+                    connectionState.snapshotTimestamps.delete(responseId);
+                  }
+                  stageRetryScheduled = true
                 }
                 // If no retry scheduled (max attempts reached non-fatally), continue normal processing
               }
             }
           }
+          if (stageRetryScheduled) {
+            break;
+          }
 
+          let finalizedAssistantTranscriptLength = 0
           const output = data.response?.output;
           if (Array.isArray(output)) {
             for (const item of output) {
               if (item.role === 'assistant') {
                 const transcript = item.content?.[0]?.transcript;
                 if (transcript) {
+                  finalizedAssistantTranscriptLength = Math.max(finalizedAssistantTranscriptLength, transcript.length)
+                  lastAssistantTranscriptForEchoCheck = transcript
                   console.log(
                     `assistant transcript finalized (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${transcript.length}, transcriptHash: ${hashTranscriptForLog(transcript)})`
                   )
@@ -658,72 +884,150 @@ export function setupDataChannelHandlers(
           if (currentStage === Stage.Introduction && !introTransitionSent) {
             introTransitionSent = true;
             connectionState.currentResponseActive = false;
-            connectionState.audioWindowActive = false;
+            responseDoneResponseId = null
+            clearVadEnableQuarantineTimer()
             console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
-            console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-            console.log("👋 AI finished initial greeting. Sending next stage prompt (ONCE)..." );
+            console.log("👋 AI finished initial greeting. Will release Symptoms transition after playback boundary..." );
             const nextStage = nextStageAfterIntro;
             console.log(`🔵 [Handlers] Intro complete. Next Stage: ${Stage[nextStage]}`);
-            performStageTransition(dataChannel, callbacks, stageManager, nextStage, connectionState, baselineContext);
+            pendingIntroTransitionResponseId = boundaryResponseId
+            pendingIntroTransitionTranscriptLength = finalizedAssistantTranscriptLength
+            if (boundaryResponseId !== null && outputStoppedResponseId === boundaryResponseId) {
+              if (stageManager.getStage() !== Stage.Introduction) {
+                clearPendingIntroTransition()
+                console.log(
+                  `🟡 [Realtime VAD] Introduction transition release skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: stage-not-introduction)`
+                )
+              } else {
+                console.log(
+                  `🟢 [Realtime VAD] Introduction playback reached real output stopped before transition (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, transcriptLength: ${pendingIntroTransitionTranscriptLength})`
+                )
+                clearPendingIntroTransition()
+                if (boundaryResponseId !== null) {
+                  playbackReleasedResponseId = boundaryResponseId
+                }
+                connectionState.audioWindowActive = false
+                console.log(`🔇 [Audio Gate] Closing audio window at real output stopped (session: ${connectionState.sessionId})`)
+                performStageTransition(dataChannel, callbacks, stageManager, nextStage, connectionState, baselineContext);
+              }
+            } else {
+              clearOutputStopFallbackTimer()
+              const playbackDrainMs = getPlaybackDrainMs(finalizedAssistantTranscriptLength)
+              console.log(
+                `🟡 [Realtime VAD] Introduction transition delayed for RN playback drain (session: ${connectionState.sessionId}, hasResponseId: ${boundaryResponseId !== null}, transcriptLength: ${finalizedAssistantTranscriptLength}, delayMs: ${playbackDrainMs})`
+              )
+              outputStopFallbackTimer = setTimeout(() => {
+                outputStopFallbackTimer = null
+                if (dataChannel.readyState !== 'open') {
+                  clearPendingIntroTransition()
+                  console.log(`🟡 [Realtime VAD] Introduction RN drain release skipped (session: ${connectionState.sessionId}, reason: channel-not-open)`)
+                  return
+                }
+                if (connectionState.currentResponseActive === true) {
+                  clearPendingIntroTransition()
+                  console.log(`🟡 [Realtime VAD] Introduction RN drain release skipped (session: ${connectionState.sessionId}, reason: response-active)`)
+                  return
+                }
+                if (connectionState.stageTransitionInProgress === true) {
+                  clearPendingIntroTransition()
+                  console.log(`🟡 [Realtime VAD] Introduction RN drain release skipped (session: ${connectionState.sessionId}, reason: stage-transition)`)
+                  return
+                }
+                if (stageManager.getStage() !== Stage.Introduction) {
+                  clearPendingIntroTransition()
+                  console.log(`🟡 [Realtime VAD] Introduction RN drain release skipped (session: ${connectionState.sessionId}, reason: stage-not-introduction)`)
+                  return
+                }
+                if (boundaryResponseId !== null && pendingIntroTransitionResponseId !== boundaryResponseId) {
+                  clearPendingIntroTransition()
+                  console.log(`🟡 [Realtime VAD] Introduction RN drain release skipped (session: ${connectionState.sessionId}, reason: pending-id-mismatch)`)
+                  return
+                }
+                if (boundaryResponseId !== null && playbackReleasedResponseId === boundaryResponseId) {
+                  clearPendingIntroTransition()
+                  console.log(`🟡 [Realtime VAD] Introduction RN drain release skipped (session: ${connectionState.sessionId}, reason: already-released)`)
+                  return
+                }
+                console.log(
+                  `🟢 [Realtime VAD] Introduction RN playback drain fallback releasing transition (session: ${connectionState.sessionId}, hasResponseId: ${boundaryResponseId !== null}, transcriptLength: ${pendingIntroTransitionTranscriptLength}, delayMs: ${playbackDrainMs})`
+                )
+                clearPendingIntroTransition()
+                if (boundaryResponseId !== null) {
+                  playbackReleasedResponseId = boundaryResponseId
+                }
+                connectionState.audioWindowActive = false
+                console.log(`🔇 [Audio Gate] Closing audio window at RN playback-drain fallback (session: ${connectionState.sessionId})`)
+                performStageTransition(dataChannel, callbacks, stageManager, nextStage, connectionState, baselineContext);
+              }, playbackDrainMs)
+            }
           } else {
             connectionState.currentResponseActive = false;
-            connectionState.audioWindowActive = false;
             console.log(`🟡 [Realtime] Turn closed – flag reset (response.done) (session: ${connectionState.sessionId})`);
-            console.log(`🔇 [Audio Gate] Closing audio window on response finalization (session: ${connectionState.sessionId})`);
-            const reminderSent = trySendPendingReminder()
-            if (reminderSent === false && connectionState.stageTransitionInProgress !== true) {
+            if (
+              connectionState.stageTransitionInProgress === true ||
+              stageEntryRetryOwnsNextBoundary === true
+            ) {
+              pendingReminderPhase = null
+              clearResponseBoundState(boundaryResponseId)
+            } else {
               responseDoneResponseId = boundaryResponseId
               if (boundaryResponseId !== null && outputStoppedResponseId === boundaryResponseId) {
-                scheduleReopenForCompletedAssistantTurn('output-buffer-stopped', boundaryResponseId)
+                if (pendingReminderPhase !== null) {
+                  playbackReleasedResponseId = boundaryResponseId
+                  connectionState.audioWindowActive = false
+                  clearResponseBoundState(boundaryResponseId)
+                  trySendPendingReminder()
+                } else {
+                  playbackReleasedResponseId = boundaryResponseId
+                  connectionState.audioWindowActive = false
+                  console.log(`🔇 [Audio Gate] Closing audio window at real output stopped (session: ${connectionState.sessionId})`)
+                  scheduleEnableVad('output-buffer-stopped', boundaryResponseId)
+                }
               } else {
                 clearOutputStopFallbackTimer()
+                const playbackDrainMs = getPlaybackDrainMs(finalizedAssistantTranscriptLength)
                 console.log(
-                  `🟡 [Turn Gate] response.done fallback scheduled (reason: response.done.fallback-scheduled, session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${boundaryResponseId !== null}, delayMs: ${OUTPUT_STOP_FALLBACK_MS})`
+                  `🟡 [Realtime VAD] response.done RN playback drain fallback scheduled (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${boundaryResponseId !== null}, transcriptLength: ${finalizedAssistantTranscriptLength}, delayMs: ${playbackDrainMs})`
                 )
                 outputStopFallbackTimer = setTimeout(() => {
                   outputStopFallbackTimer = null
                   if (dataChannel.readyState !== 'open') {
-                    console.log(
-                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: channel-not-open)`
-                    )
                     return
                   }
                   if (connectionState.currentResponseActive === true) {
-                    console.log(
-                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: response-active)`
-                    )
                     return
                   }
                   if (connectionState.stageTransitionInProgress === true) {
-                    console.log(
-                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: stage-transition)`
-                    )
                     return
                   }
-                  if (
-                    boundaryResponseId !== null &&
-                    responseDoneResponseId !== boundaryResponseId
-                  ) {
-                    console.log(
-                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: response-done-mismatch)`
-                    )
+                  if (boundaryResponseId !== null && responseDoneResponseId !== boundaryResponseId) {
                     return
                   }
-                  if (
-                    boundaryResponseId !== null &&
-                    activeAssistantResponseId !== null &&
-                    activeAssistantResponseId !== boundaryResponseId
-                  ) {
+                  if (boundaryResponseId !== null && playbackReleasedResponseId === boundaryResponseId) {
                     console.log(
-                      `🟡 [Turn Gate] response.done fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: active-response-mismatch)`
+                      `🟡 [Realtime VAD] RN playback drain fallback skipped (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, reason: already-released)`
                     )
                     return
                   }
                   console.log(
-                    `🟡 [Turn Gate] response.done fallback fired (reason: response.done.fallback-fired, session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${boundaryResponseId !== null})`
+                    `🟡 [Realtime VAD] RN playback drain fallback path used (session: ${connectionState.sessionId}, stage: ${Stage[stageManager.getStage()]}, hasResponseId: ${boundaryResponseId !== null}, transcriptLength: ${finalizedAssistantTranscriptLength}, delayMs: ${playbackDrainMs}, hasPendingReminder: ${pendingReminderPhase !== null})`
                   )
-                  scheduleReopenForCompletedAssistantTurn('response.done.fallback', boundaryResponseId)
-                }, OUTPUT_STOP_FALLBACK_MS)
+                  if (pendingReminderPhase !== null) {
+                    if (boundaryResponseId !== null) {
+                      playbackReleasedResponseId = boundaryResponseId
+                    }
+                    connectionState.audioWindowActive = false
+                    clearResponseBoundState(boundaryResponseId)
+                    trySendPendingReminder()
+                    return
+                  }
+                  if (boundaryResponseId !== null) {
+                    playbackReleasedResponseId = boundaryResponseId
+                  }
+                  connectionState.audioWindowActive = false
+                  console.log(`🔇 [Audio Gate] Closing audio window at RN playback-drain fallback (session: ${connectionState.sessionId})`)
+                  scheduleEnableVad('response.done.fallback', boundaryResponseId)
+                }, playbackDrainMs)
               }
             }
             if (currentStage !== Stage.Introduction) {
@@ -737,12 +1041,8 @@ export function setupDataChannelHandlers(
 
         case 'conversation.item.input_audio_transcription.delta':
           if (data.delta?.text) {
-            if (turnGate.shouldIgnoreInput()) {
-              rejectNextCompletedTranscript = true
-              currentListeningWindowContaminated = true
-              console.log(
-                `partial transcript ignored: input closed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
-              )
+            const deltaContaminated = clearExpiredContamination()
+            if (deltaContaminated) {
               break
             }
             callbacks.onPartialTranscript?.(data.delta.text);
@@ -765,60 +1065,91 @@ export function setupDataChannelHandlers(
                   : undefined
             if (userItemId && connectionState.processedItemIds.has(userItemId)) {
               connectionState.userSpeechActive = false
-              rejectNextCompletedTranscript = false
-              currentListeningWindowContaminated = false
-              break
-            }
-            if (turnGate.shouldIgnoreInput()) {
-              if (userItemId) {
-                addItemId(connectionState, userItemId)
-              }
-              connectionState.userSpeechActive = false
-              rejectNextCompletedTranscript = false
-              currentListeningWindowContaminated = false
-              console.log(
-                `transcript rejected: input closed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
-              )
-              break
-            }
-            if (rejectNextCompletedTranscript) {
-              if (userItemId) {
-                addItemId(connectionState, userItemId)
-              }
-              connectionState.userSpeechActive = false
-              rejectNextCompletedTranscript = false
-              currentListeningWindowContaminated = false
-              console.log(
-                `transcript rejected: stale contaminated window (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
-              )
-              break
-            }
-            if (currentListeningWindowContaminated) {
-              if (userItemId) {
-                addItemId(connectionState, userItemId)
-              }
-              connectionState.userSpeechActive = false
-              rejectNextCompletedTranscript = false
-              currentListeningWindowContaminated = false
-              console.log(
-                `transcript rejected: contaminated (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
-              )
               break
             }
             const userTranscript = d.transcript?.trim()
+            const stillContaminated = clearExpiredContamination()
+            if (stillContaminated) {
+              if (userTranscript) {
+                const normalizedRejected = normalizeEchoText(userTranscript)
+                lastRejectedEchoHash = hashTranscriptForLog(normalizedRejected)
+                lastRejectedEchoAtMs = Date.now()
+                rejectCompletedInput(
+                  'contaminated-window',
+                  userItemId,
+                  userTranscript.length,
+                  hashTranscriptForLog(userTranscript)
+                )
+              } else {
+                rejectCompletedInput('contaminated-window', userItemId)
+              }
+              break
+            }
             if (!userTranscript) {
               if (userItemId) {
                 addItemId(connectionState, userItemId)
               }
               connectionState.userSpeechActive = false
-              rejectNextCompletedTranscript = false
-              currentListeningWindowContaminated = false
               console.log(`🔵 [Stage Entry Guard] User speech completed (session: ${connectionState.sessionId})`);
+              break
+            }
+            if (isLikelyPostAssistantEcho(userTranscript)) {
+              if (userItemId) {
+                addItemId(connectionState, userItemId)
+              }
+              connectionState.userSpeechActive = false
+              const normalizedRejected = normalizeEchoText(userTranscript)
+              lastRejectedEchoHash = hashTranscriptForLog(normalizedRejected)
+              lastRejectedEchoAtMs = Date.now()
+              const inEchoWindow =
+                vadEnabledAtMs > 0 &&
+                Date.now() - vadEnabledAtMs <= POST_ASSISTANT_ECHO_WINDOW_MS
+              const truncatedInEchoWindow = truncatedSinceVadEnable === true && inEchoWindow
+              console.log(
+                `🟡 [Realtime Echo] suspected echo rejected (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${userTranscript.length}, transcriptHash: ${hashTranscriptForLog(userTranscript)}, echoWindow: ${inEchoWindow}, truncatedInEchoWindow: ${truncatedInEchoWindow}, inputWindowContaminated: ${inputWindowContaminated}, rejectNextCompletedTranscript: ${rejectNextCompletedTranscript})`
+              )
+              if (dataChannel.readyState === 'open') {
+                try {
+                  dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.clear' }))
+                  console.log(
+                    `🟢 [Realtime Echo] input_audio_buffer.clear sent (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+                  )
+                } catch (clearErr) {
+                  console.warn(
+                    `🟡 [Realtime Echo] input_audio_buffer.clear failed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, errorType: ${clearErr instanceof Error ? clearErr.name : typeof clearErr})`
+                  )
+                }
+              }
               break
             }
             if (userItemId) {
               addItemId(connectionState, userItemId)
             }
+            const shouldSendManualResponse =
+              currentStage === Stage.MedicalHistory || currentStage === Stage.Symptoms
+            const manualResponseAllowed =
+              shouldSendManualResponse &&
+              connectionState.stageTransitionInProgress !== true &&
+              connectionState.currentResponseActive !== true &&
+              connectionState.audioWindowActive !== true &&
+              dataChannel.readyState === 'open'
+
+            if (manualResponseAllowed) {
+              disableVad('accepted-user-turn')
+              if (dataChannel.readyState === 'open') {
+                try {
+                  dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.clear' }))
+                  console.log(
+                    `🟢 [Realtime] input_audio_buffer.clear sent for accepted user turn (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+                  )
+                } catch (clearErr) {
+                  console.warn(
+                    `🟡 [Realtime] input_audio_buffer.clear failed for accepted user turn (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, errorType: ${clearErr instanceof Error ? clearErr.name : typeof clearErr})`
+                  )
+                }
+              }
+            }
+
             callbacks.onTranscript(userTranscript);
             const userChunk: MemoryItem = { role: "user", content: userTranscript };
             const phase = currentStage === Stage.MedicalHistory ? 'medical-history' : 'symptoms';
@@ -833,35 +1164,39 @@ export function setupDataChannelHandlers(
               `user transcript completed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${userTranscript.length}, transcriptHash: ${hashTranscriptForLog(userTranscript)})`
             )
             connectionState.userSpeechActive = false;
-            rejectNextCompletedTranscript = false
-            currentListeningWindowContaminated = false
 
-            if (currentStage !== Stage.Introduction && connectionState.stageTransitionInProgress !== true) {
-              turnGate.closeForAssistantOutput('accepted-user-turn')
-              const stagePrompt = getCompletedUserTurnPromptForStage(currentStage, baselineContext)
-              const schemaKey = getFunctionSchemaKey(currentStage)
-              const schemaContent = schemaKey ? getFunctionSchemaContent(schemaKey) : undefined
-              sendPromptInstruction(
-                dataChannel,
-                () => currentStage,
-                callbacks,
-                stagePrompt,
-                schemaContent,
-                { connectionState }
-              )
+            if (manualResponseAllowed) {
+              const stillCanSendManualResponse =
+                dataChannel.readyState === 'open' &&
+                connectionState.stageTransitionInProgress !== true &&
+                stageManager.getStage() === currentStage &&
+                connectionState.currentResponseActive !== true &&
+                connectionState.audioWindowActive !== true
+              if (stillCanSendManualResponse) {
+                const stagePrompt = getCompletedUserTurnInstructions(currentStage)
+                const schemaKey = getFunctionSchemaKey(currentStage)
+                const schemaContent = schemaKey ? getFunctionSchemaContent(schemaKey) : undefined
+                sendPromptInstruction(
+                  dataChannel,
+                  () => currentStage,
+                  callbacks,
+                  stagePrompt,
+                  schemaContent,
+                  { connectionState }
+                )
+              } else {
+                console.log(
+                  `🟡 [Realtime] manual response.create skipped after async gap (session: ${connectionState.sessionId}, capturedStage: ${Stage[currentStage]}, currentStage: ${Stage[stageManager.getStage()]}, stageTransitionInProgress: ${connectionState.stageTransitionInProgress === true}, channel: ${dataChannel.readyState}, currentResponseActive: ${connectionState.currentResponseActive === true}, audioWindowActive: ${connectionState.audioWindowActive === true})`
+                )
+              }
+              truncatedSinceVadEnable = false
+            } else {
+              truncatedSinceVadEnable = false
             }
           }
           break;
 
         case 'input_audio_buffer.speech_started':
-          if (turnGate.shouldIgnoreInput()) {
-            currentListeningWindowContaminated = true
-            rejectNextCompletedTranscript = true
-            console.log(
-              `input contamination marked (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: speech_started while input closed)`
-            )
-            break
-          }
           connectionState.userSpeechActive = true;
           console.log(
             `speech_started.listening_window (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
@@ -875,19 +1210,16 @@ export function setupDataChannelHandlers(
           );
           break;
 
-        case 'input_audio_buffer.committed':
-          if (turnGate.shouldIgnoreInput()) {
-            currentListeningWindowContaminated = true
-            rejectNextCompletedTranscript = true
-            console.log(
-              `input contamination marked (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: committed while input closed)`
-            )
-            break
+        case 'input_audio_buffer.committed': {
+          const committedContaminated = clearExpiredContamination()
+          if (committedContaminated) {
+            rejectContaminatedTranscriptUntilMs = Date.now() + POST_ASSISTANT_ECHO_WINDOW_MS
           }
           console.log(
-            `input_audio_buffer.committed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+            `input_audio_buffer.committed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, contaminated: ${committedContaminated})`
           );
           break;
+        }
 
         case 'input_audio_buffer.cleared':
           console.log(
@@ -898,29 +1230,46 @@ export function setupDataChannelHandlers(
         case 'conversation.item.created': {
           const it = (data as { item?: { role?: string } }).item;
           const role = it?.role;
+          let createdContaminated = false
+          if (role === 'user') {
+            createdContaminated = clearExpiredContamination()
+            if (createdContaminated) {
+              rejectContaminatedTranscriptUntilMs = Date.now() + POST_ASSISTANT_ECHO_WINDOW_MS
+            }
+          }
           console.log(
-            `conversation.item.created (role: ${role ?? 'unknown'}, session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+            `conversation.item.created (role: ${role ?? 'unknown'}, session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, contaminated: ${createdContaminated})`
           );
           break;
         }
 
-        case 'conversation.item.truncated':
-          if (turnGate.shouldIgnoreInput() === false) {
-            currentListeningWindowContaminated = true
+        case 'conversation.item.truncated': {
+          truncatedSinceVadEnable = true
+          const postAssistantWindow = isPostAssistantWindow()
+          if (postAssistantWindow && serverVadEnabled === true) {
+            inputWindowContaminated = true
             rejectNextCompletedTranscript = true
-            console.log(
-              `input contamination marked (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: conversation.item.truncated)`
-            )
-            break
+            rejectContaminatedTranscriptUntilMs = Date.now() + POST_ASSISTANT_ECHO_WINDOW_MS
           }
           console.log(
-            `conversation.item.truncated (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]})`
+            `conversation.item.truncated (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, postAssistantWindow: ${postAssistantWindow}, serverVadEnabled: ${serverVadEnabled}, rejectNextCompletedTranscript: ${rejectNextCompletedTranscript})`
           );
           break;
+        }
 
         case 'response.canceled':
         case 'response.cancelled':
         case 'response.interrupted':
+          const cancellationResponseId = getRealtimeResponseId(data)
+          if (
+            cancellationResponseId !== null &&
+            cancellationResponseId !== activeAssistantResponseId
+          ) {
+            console.log(
+              `🟡 [Realtime VAD] stale cancel ignored (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, hasResponseId: true)`
+            )
+            break;
+          }
           connectionState.currentResponseActive = false;
           connectionState.audioWindowActive = false;
           console.log(`🟡 [Realtime] Response canceled - flag reset (session: ${connectionState.sessionId}, type: ${data.type})`);
@@ -929,6 +1278,22 @@ export function setupDataChannelHandlers(
             clearTimeout(connectionState.stageEntryGuard.cancelWatchdog);
             connectionState.stageEntryGuard.cancelWatchdog = null;
             console.log(`🔵 [Stage Entry Guard] Cancel acknowledged (session: ${connectionState.sessionId})`);
+          }
+          clearResponseBoundState(cancellationResponseId)
+          if (connectionState.stageTransitionInProgress === true) {
+            console.log(
+              `🟡 [Realtime VAD] cancellation leaves VAD disabled (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: stage-transition)`
+            )
+            break;
+          }
+          if (connectionState.stageEntryExpectation || connectionState.stageEntryGuard) {
+            console.log(
+              `🟡 [Realtime VAD] cancellation leaves VAD disabled (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, reason: stage-entry-guard)`
+            )
+            break;
+          }
+          if (dataChannel.readyState === 'open') {
+            scheduleEnableVad('response.canceled', null)
           }
           break;
 
@@ -997,16 +1362,13 @@ export function setupDataChannelHandlers(
   });
 
   dataChannel.addEventListener('error', () => {
-    clearOutputStopFallbackTimer()
-    turnGate.cleanup('data-channel-error');
+    cleanupRealtimeBoundary('data-channel-error')
     console.error(`🔴 [Realtime] DataChannel error (session: ${connectionState.sessionId})`);
     callbacks.onError(new Error('WebRTC data channel error occurred.'));
   });
 
   dataChannel.addEventListener('close', () => {
-    clearOutputStopFallbackTimer()
-    turnGate.cleanup('data-channel-close');
-    connectionState.restoreListeningAfterBoundaryFailure = undefined
+    cleanupRealtimeBoundary('data-channel-close')
     console.log(`🔵 [Realtime] Data channel closed (session: ${connectionState.sessionId}).`);
 
     console.log(`🧹 [Cleanup] Performing comprehensive state cleanup on dataChannel close (session: ${connectionState.sessionId})`);
@@ -1034,8 +1396,6 @@ export function setupDataChannelHandlers(
       return;
     }
     dataChannelCleanedUp = true;
-    connectionState.restoreListeningAfterBoundaryFailure = undefined
-    clearOutputStopFallbackTimer()
-    turnGate.cleanup('connection-disconnect');
+    cleanupRealtimeBoundary('setup-cleanup')
   };
 }

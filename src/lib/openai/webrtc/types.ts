@@ -84,7 +84,6 @@ export interface ConnectionState {
   stageEntryResponseTimeoutMs: number
   audioTrack?: MediaStreamTrack
   micMuted: boolean
-  restoreListeningAfterBoundaryFailure?: (reason: string) => void
 }
 
 export function createConnectionState(sessionId: string): ConnectionState {
