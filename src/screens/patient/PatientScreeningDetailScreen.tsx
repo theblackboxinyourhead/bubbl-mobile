@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, Linking } from 'react-native'
-import * as Notifications from 'expo-notifications'
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { fetchScreeningPatient } from '@/api/screenings'
 import { supabase } from '@/lib/supabase'
-import {
-  clearFollowThroughReminderForPatient,
-  saveFollowThroughReminderForPatient,
-  scheduleScreeningReminder,
-} from '@/lib/notifications'
+import { clearFollowThroughReminderForPatient } from '@/lib/notifications'
 import { ApiError } from '@/lib/apiClient'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
@@ -29,12 +23,6 @@ function asString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed ? trimmed : null
-}
-
-function formatTime(hour: number, minute: number): string {
-  const h12 = hour % 12 === 0 ? 12 : hour % 12
-  const suffix = hour >= 12 ? 'PM' : 'AM'
-  return `${h12}:${String(minute).padStart(2, '0')} ${suffix}`
 }
 
 function deriveSections(detail: PatientScreeningDetail | null): SectionData[] {
@@ -133,24 +121,11 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<PatientScreeningDetail | null>(null)
-  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(true)
-  const [reminderAt, setReminderAt] = useState<Date>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    d.setHours(9, 0, 0, 0)
-    return d
-  })
-  const [datePickerVisible, setDatePickerVisible] = useState(false)
-  const [timePickerVisible, setTimePickerVisible] = useState(false)
-  const [reminderMessage, setReminderMessage] = useState<string | null>(null)
 
   const loadDetail = async () => {
     setLoading(true)
     setError(null)
     try {
-      const permission = await Notifications.getPermissionsAsync()
-      setNotificationPermissionGranted(permission.status === 'granted')
-
       const s = await fetchScreeningPatient(screeningId)
       setDetail(s)
     } catch (e) {
@@ -176,57 +151,12 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screeningId])
 
-  const scheduleReminder = async () => {
-    setReminderMessage(null)
-    if (!notificationPermissionGranted) {
-      setReminderMessage('Enable notifications in OS settings before scheduling reminders.')
-      return
-    }
-    if (reminderAt.getTime() <= Date.now()) {
-      setReminderMessage('Pick a future date and time.')
-      return
-    }
-
-    const fireAtISO = reminderAt.toISOString()
-    const notificationId = await scheduleScreeningReminder({ screeningId, fireAtISO })
-    const userId = (await supabase.auth.getUser()).data.user?.id
-    if (userId) {
-      await saveFollowThroughReminderForPatient({
-        patientId: userId,
-        screeningId,
-        notificationId,
-        fireAtISO,
-      })
-    }
-    setReminderMessage(`Reminder scheduled for ${reminderAt.toLocaleString()}.`)
-  }
-
-  const onDateChange = (_: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === 'android') setDatePickerVisible(false)
-    if (!selected) return
-    setReminderAt((prev) => {
-      const next = new Date(prev)
-      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate())
-      return next
-    })
-  }
-
-  const onTimeChange = (_: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === 'android') setTimePickerVisible(false)
-    if (!selected) return
-    setReminderAt((prev) => {
-      const next = new Date(prev)
-      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0)
-      return next
-    })
-  }
-
   const sections = useMemo(() => deriveSections(detail), [detail])
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
       <View style={styles.stage}>
-        <Text style={styles.subtitle}>Summary and follow-through.</Text>
+        <Text style={styles.subtitle}>Screening details.</Text>
 
         {loading ? <LoadingState label="Loading screening detail..." /> : null}
         {error ? <ErrorState body={error} onRetry={() => void loadDetail()} /> : null}
@@ -249,77 +179,6 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
             <EmptyState key={section.title} title={section.title} body={section.emptyBody} />
           )
         )}
-
-        <View style={styles.card}>
-          <Text style={luminaStyles.rowTitleStrong}>Follow-through reminder</Text>
-          {!notificationPermissionGranted ? (
-            <View style={styles.permissionRow}>
-              <Text style={styles.cardBody}>
-                Notifications are disabled. Enable notifications in OS settings to schedule reminders.
-              </Text>
-              <Pressable
-                style={({ pressed }) => [
-                  luminaStyles.actionTintedButton,
-                  pressed && luminaStyles.pressedButton,
-                ]}
-                onPress={() => Linking.openSettings()}
-              >
-                <Text style={luminaStyles.actionTintedButtonText}>Open settings</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          <Text style={styles.sectionLabel}>Reminder date</Text>
-          <Pressable
-            style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
-            onPress={() => setDatePickerVisible(true)}
-          >
-            <Text style={luminaStyles.secondaryButtonText}>
-              {reminderAt.toLocaleDateString()}
-            </Text>
-          </Pressable>
-          {datePickerVisible || Platform.OS === 'ios' ? (
-            <DateTimePicker
-              mode="date"
-              value={reminderAt}
-              onChange={onDateChange}
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            />
-          ) : null}
-
-          <Text style={styles.sectionLabel}>Reminder time</Text>
-          <Pressable
-            style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
-            onPress={() => setTimePickerVisible(true)}
-          >
-            <Text style={luminaStyles.secondaryButtonText}>
-              {formatTime(reminderAt.getHours(), reminderAt.getMinutes())}
-            </Text>
-          </Pressable>
-          {timePickerVisible || Platform.OS === 'ios' ? (
-            <DateTimePicker
-              mode="time"
-              value={reminderAt}
-              onChange={onTimeChange}
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            />
-          ) : null}
-
-          <Text style={styles.cardBody}>Selected: {reminderAt.toLocaleString()}</Text>
-
-          <Pressable
-            style={({ pressed }) => [
-              luminaStyles.primaryButton,
-              !notificationPermissionGranted ? styles.disabled : undefined,
-              pressed && luminaStyles.pressedButton,
-            ]}
-            onPress={() => void scheduleReminder()}
-            disabled={!notificationPermissionGranted}
-          >
-            <Text style={luminaStyles.primaryButtonText}>Schedule reminder</Text>
-          </Pressable>
-          {reminderMessage ? <Text style={styles.cardBody}>{reminderMessage}</Text> : null}
-        </View>
 
         <View style={styles.card}>
           <Text style={luminaStyles.rowTitleStrong}>Share</Text>
@@ -371,17 +230,5 @@ const styles = StyleSheet.create({
     color: lumina.onSurfaceVariant,
     fontSize: 14,
     lineHeight: 20,
-  },
-  permissionRow: {
-    gap: 8,
-  },
-  sectionLabel: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  disabled: {
-    opacity: 0.55,
   },
 })

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchPatientHistory } from '@/api/patients'
-import { luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 
 type Props = PatientTabScreenProps<'Timeline'>
@@ -47,16 +47,20 @@ function summarizeSymptoms(symptomsData: unknown): string {
   return 'Symptoms summary unavailable.'
 }
 
-function historyTone(status: string): 'attention' | 'ready' | 'neutral' {
+type HistoryTone = 'attention' | 'ready' | 'neutral' | 'cancelled'
+
+function historyTone(status: string): HistoryTone {
   const s = status.trim().toLowerCase()
   if (s === 'completed') return 'ready'
+  if (s === 'cancelled') return 'cancelled'
   if (s.includes('pending') || s.includes('sent') || s.includes('review')) return 'attention'
   return 'neutral'
 }
 
-function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
+function toneDotStyle(tone: HistoryTone) {
   if (tone === 'ready') return luminaStyles.statusDotReady
   if (tone === 'attention') return luminaStyles.statusDotAttention
+  if (tone === 'cancelled') return styles.cancelledDot
   return luminaStyles.statusDotNeutral
 }
 
@@ -159,5 +163,13 @@ const styles = StyleSheet.create({
   rowTextCol: {
     flex: 1,
     gap: 3,
+  },
+  cancelledDot: {
+    backgroundColor: lumina.error,
+    shadowColor: lumina.error,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 2,
   },
 })

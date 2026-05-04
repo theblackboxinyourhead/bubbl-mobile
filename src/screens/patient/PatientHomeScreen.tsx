@@ -3,7 +3,6 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
 import { fetchPatientHistory } from '@/api/patients'
-import { getPatientReminderState, reconcileReminderMetadata } from '@/lib/notifications'
 import { luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 
@@ -18,9 +17,6 @@ type HomeData = {
     | null
   latestCompletedScreeningId: string | null
   latestCompletedDateLabel: string | null
-  nextWeeklyDueLabel: string | null
-  followThroughLabel: string | null
-  followThroughScreeningId: string | null
 }
 
 export function PatientHomeScreen({ navigation }: Props) {
@@ -38,9 +34,6 @@ export function PatientHomeScreen({ navigation }: Props) {
         throw new Error('Patient home is unavailable for this account.')
       }
 
-      const patientId = me.user.id
-      await reconcileReminderMetadata(patientId)
-      const reminders = await getPatientReminderState(patientId)
       const history = (await fetchPatientHistory({ includeTranscripts: false })) as {
         screenings?: {
           id?: string
@@ -70,13 +63,6 @@ export function PatientHomeScreen({ navigation }: Props) {
           typeof latestCompleted?.createdAt === 'string'
             ? new Date(latestCompleted.createdAt).toLocaleString()
             : null,
-        nextWeeklyDueLabel: reminders.nextWeeklyDueISO
-          ? new Date(reminders.nextWeeklyDueISO).toLocaleString()
-          : null,
-        followThroughLabel: reminders.nearestFollowThrough
-          ? new Date(reminders.nearestFollowThrough.fireAtISO).toLocaleString()
-          : null,
-        followThroughScreeningId: reminders.nearestFollowThrough?.screeningId ?? null,
       }
 
       lastGoodRef.current = next
@@ -133,38 +119,6 @@ export function PatientHomeScreen({ navigation }: Props) {
                 {data.activeIntake ? 'Resume active intake' : 'Start screening'}
               </Text>
             </Pressable>
-          </View>
-
-          <View style={luminaStyles.sectionFlat}>
-            <Text style={luminaStyles.sectionHeader}>Reminders</Text>
-            {data.followThroughLabel && data.followThroughScreeningId ? (
-              <Pressable
-                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
-                onPress={() => {
-                  const id = data.followThroughScreeningId
-                  if (!id) return
-                  navigation.navigate('PatientScreeningDetail', { screeningId: id })
-                }}
-              >
-                <Text style={luminaStyles.rowTitleStrong}>Follow-through due</Text>
-                <Text style={luminaStyles.metaText}>{data.followThroughLabel}</Text>
-                <Text style={luminaStyles.metaText}>Open follow-through</Text>
-              </Pressable>
-            ) : data.nextWeeklyDueLabel ? (
-              <Pressable
-                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
-                onPress={() => navigation.navigate('CheckInStart')}
-              >
-                <Text style={luminaStyles.rowTitleStrong}>Weekly check-in</Text>
-                <Text style={luminaStyles.metaText}>Due {data.nextWeeklyDueLabel}</Text>
-                <Text style={luminaStyles.metaText}>Open check-in</Text>
-              </Pressable>
-            ) : (
-              <EmptyState
-                title="No reminders scheduled"
-                body="Set weekly or follow-through reminders from Profile."
-              />
-            )}
           </View>
 
           <View style={luminaStyles.sectionFlat}>
