@@ -25,24 +25,48 @@ function asString(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
+type NormalizedStatus = 'pending' | 'cancelled' | 'error' | 'completed'
+
+function normalizeStatus(detail: PatientScreeningDetail | null): NormalizedStatus {
+  const raw = (asString(detail?.status) ?? asString(detail?.resumeState?.screeningStatus) ?? '').toLowerCase()
+  if (raw === 'cancelled' || raw === 'canceled') return 'cancelled'
+  if (raw === 'error' || raw === 'failed') return 'error'
+  if (raw === 'completed') return 'completed'
+  return 'pending'
+}
+
+function symptomsEmptyCopy(status: NormalizedStatus): string {
+  switch (status) {
+    case 'cancelled':
+      return 'No symptoms were recorded for this cancelled screening.'
+    case 'error':
+      return 'Symptoms are not available for this screening.'
+    case 'completed':
+      return 'No symptoms were recorded for this screening.'
+    default:
+      return 'Symptom information is not available yet.'
+  }
+}
+
+function medicalHistoryEmptyCopy(status: NormalizedStatus): string {
+  switch (status) {
+    case 'cancelled':
+      return 'No medical history was recorded for this cancelled screening.'
+    case 'error':
+      return 'Medical history is not available for this screening.'
+    case 'completed':
+      return 'No medical history was recorded for this screening.'
+    default:
+      return 'Medical history is not available yet.'
+  }
+}
+
 function deriveSections(detail: PatientScreeningDetail | null): SectionData[] {
   if (!detail) return []
 
+  const status = normalizeStatus(detail)
   const sections: SectionData[] = []
-  const medicalHistory = detail.medicalHistory ?? null
   const symptoms = detail.symptoms ?? null
-  const preliminaryAssessment = detail.preliminaryAssessment ?? null
-  const screeningSummary = detail.screeningSummary ?? null
-  const visitSummary = detail.visitSummary ?? null
-  const clinicalInsights = detail.scribeRecordClinicalInsights ?? null
-  const stage2Data = detail.stage2Data ?? null
-
-  const summaryLines = [asString(screeningSummary), asString(visitSummary)].filter((line): line is string => Boolean(line))
-  sections.push({
-    title: 'Summary',
-    lines: summaryLines,
-    emptyBody: 'No screening or visit summary is available yet.',
-  })
 
   const symptomLines: string[] = []
   if (symptoms) {
@@ -54,63 +78,14 @@ function deriveSections(detail: PatientScreeningDetail | null): SectionData[] {
   sections.push({
     title: 'Symptoms',
     lines: symptomLines,
-    emptyBody: 'No symptom summary is available yet.',
+    emptyBody: symptomsEmptyCopy(status),
   })
 
-  const assessmentLines: string[] = []
-  if (preliminaryAssessment) {
-    const summary = asString(preliminaryAssessment.summary)
-    if (summary) assessmentLines.push(summary)
-    const diagnoses = preliminaryAssessment.diagnoses
-    if (diagnoses) {
-      diagnoses.slice(0, 3).forEach((diagnosis) => {
-        const condition = asString(diagnosis.condition)
-        const confidence = diagnosis.confidence
-        if (condition) {
-          assessmentLines.push(
-            typeof confidence === 'number'
-              ? `${condition} (${confidence}% confidence)`
-              : condition
-          )
-        }
-      })
-    }
-  }
-  sections.push({
-    title: 'Preliminary assessment',
-    lines: assessmentLines,
-    emptyBody: 'Assessment details are not available yet.',
-  })
-
-  const medicalLines = buildMedicalHistoryLines(medicalHistory)
+  const medicalLines = buildMedicalHistoryLines(detail.medicalHistory ?? null)
   sections.push({
     title: 'Medical history',
     lines: medicalLines,
-    emptyBody: 'No medical history details available yet.',
-  })
-
-  const insightLines: string[] = []
-  if (clinicalInsights) {
-    const timeline = clinicalInsights.timeline
-    if (timeline) {
-      timeline.slice(0, 3).forEach((item) => {
-        const label = asString(item.label)
-        const summary = asString(item.summary)
-        const sentence = [label, summary].filter(Boolean).join(': ')
-        if (sentence) insightLines.push(sentence)
-      })
-    }
-  }
-  if (stage2Data) {
-    const pending = asString(stage2Data.pendingReason)
-    if (pending) insightLines.push(pending)
-    const stage2Summary = asString(stage2Data.summary)
-    if (stage2Summary) insightLines.push(stage2Summary)
-  }
-  sections.push({
-    title: 'Clinical insights',
-    lines: insightLines,
-    emptyBody: 'No additional insights are available yet.',
+    emptyBody: medicalHistoryEmptyCopy(status),
   })
 
   return sections
@@ -156,7 +131,7 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
       <View style={styles.stage}>
-        <Text style={styles.subtitle}>Screening details.</Text>
+        <Text style={styles.subtitle}>Your screening symptoms and medical history.</Text>
 
         {loading ? <LoadingState label="Loading screening detail..." /> : null}
         {error ? <ErrorState body={error} onRetry={() => void loadDetail()} /> : null}
@@ -182,7 +157,7 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.card}>
           <Text style={luminaStyles.rowTitleStrong}>Share</Text>
-          <Text style={styles.cardBody}>Share this screening summary through the existing share flow.</Text>
+          <Text style={styles.cardBody}>Share this screening through the existing share flow.</Text>
           <Pressable
             style={({ pressed }) => [
               luminaStyles.actionTintedButton,
