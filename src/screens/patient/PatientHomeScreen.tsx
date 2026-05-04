@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
 import { fetchPatientHistory } from '@/api/patients'
-import { luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
+import { formatDateLabel } from '@/lib/datetime'
 
 type Props = PatientTabScreenProps<'PatientHome'>
 
@@ -61,7 +63,7 @@ export function PatientHomeScreen({ navigation }: Props) {
         latestCompletedScreeningId: typeof latestCompleted?.id === 'string' ? latestCompleted.id : null,
         latestCompletedDateLabel:
           typeof latestCompleted?.createdAt === 'string'
-            ? new Date(latestCompleted.createdAt).toLocaleString()
+            ? formatDateLabel(latestCompleted.createdAt)
             : null,
       }
 
@@ -131,10 +133,18 @@ export function PatientHomeScreen({ navigation }: Props) {
                   if (!id) return
                   navigation.navigate('PatientScreeningDetail', { screeningId: id })
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Open latest completed screening"
               >
-                <Text style={luminaStyles.rowTitleStrong}>Latest completed</Text>
-                <Text style={luminaStyles.metaText}>{data.latestCompletedDateLabel ?? 'Recent'}</Text>
-                <Text style={luminaStyles.metaText}>Open latest</Text>
+                <View style={styles.recentRowInner}>
+                  <View style={styles.recentRowTextCol}>
+                    <Text style={luminaStyles.rowTitleStrong}>Latest completed</Text>
+                    <Text style={luminaStyles.metaText}>{data.latestCompletedDateLabel ?? 'Recent'}</Text>
+                  </View>
+                  <View style={styles.chevronCell}>
+                    <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+                  </View>
+                </View>
               </Pressable>
             ) : (
               <EmptyState title="No history yet" body="Completed screenings will appear here." />
@@ -145,3 +155,18 @@ export function PatientHomeScreen({ navigation }: Props) {
     </ScrollView>
   )
 }
+
+const styles = StyleSheet.create({
+  recentRowInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  recentRowTextCol: {
+    flex: 1,
+    gap: 3,
+  },
+  chevronCell: {
+    alignSelf: 'center',
+    marginLeft: 4,
+  },
+})

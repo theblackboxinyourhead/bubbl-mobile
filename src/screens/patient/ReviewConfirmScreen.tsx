@@ -5,7 +5,7 @@ import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { completeScreening, fetchScreeningPatient } from '@/api/screenings'
 import { supabase } from '@/lib/supabase'
 import { saveActiveScreeningContext } from '@/lib/storage'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { ApiError } from '@/lib/apiClient'
 import { ErrorState, LoadingState, EmptyState } from '@/screens/shared/ScreenState'
 import { buildMedicalHistoryLines } from '@/screens/patient/medicalHistorySummary'
@@ -139,7 +139,7 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Review and confirm</Text>
         <Text style={styles.subtitle}>Review your intake summary before final submission.</Text>
 
@@ -179,8 +179,9 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
         {submitError ? <Text style={luminaStyles.errorText}>{submitError}</Text> : null}
 
         <Pressable
-          style={[
+          style={({ pressed }) => [
             luminaStyles.primaryButton,
+            pressed && luminaStyles.pressedButton,
             (canComplete !== true || submitting) && luminaStyles.primaryButtonDisabled,
           ]}
           onPress={() => void finish()}
@@ -194,7 +195,7 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
         </Pressable>
 
         <Pressable
-          style={luminaStyles.secondaryButton}
+          style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
           onPress={() => navigation.replace('Intake', { screeningId, source })}
           disabled={submitting}
         >
@@ -210,21 +211,16 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 16,
-    gap: 12,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   subtitle: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
   card: {
     borderRadius: 24,
@@ -235,11 +231,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: lumina.onSurface,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
   },
   cardBody: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
     lineHeight: 20,
+    fontFamily: luminaFonts.body,
   },
 })

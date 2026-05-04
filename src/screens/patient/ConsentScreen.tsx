@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { fetchConsent, postConsent } from '@/api/patients'
 import { ApiError } from '@/lib/apiClient'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'Consent'>
 
@@ -72,7 +72,7 @@ export function ConsentScreen({ navigation, route }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Before we continue</Text>
         <Text style={styles.body}>
           Bubbl securely collects your pre-visit health information so your clinician can prepare.
@@ -81,15 +81,19 @@ export function ConsentScreen({ navigation, route }: Props) {
           Find a quiet space and keep your phone nearby. You can review everything before completion.
         </Text>
 
-        <Pressable style={styles.acceptRow} onPress={() => setAccepted((prev) => !prev)}>
+        <Pressable
+          style={({ pressed }) => [styles.acceptRow, pressed && luminaStyles.pressedRow]}
+          onPress={() => setAccepted((prev) => !prev)}
+        >
           <View style={[styles.checkbox, accepted ? styles.checkboxOn : undefined]} />
           <Text style={styles.acceptText}>I accept the consent terms and privacy explanation.</Text>
         </Pressable>
 
         {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
         <Pressable
-          style={[
+          style={({ pressed }) => [
             luminaStyles.primaryButton,
+            pressed && luminaStyles.pressedButton,
             (submitting || !accepted) && luminaStyles.primaryButtonDisabled,
           ]}
           onPress={() => void accept()}
@@ -118,21 +122,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 10,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   body: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
   acceptRow: {
     marginTop: 4,
@@ -153,5 +152,6 @@ const styles = StyleSheet.create({
     flex: 1,
     color: lumina.onSurfaceVariant,
     fontSize: 14,
+    fontFamily: luminaFonts.body,
   },
 })

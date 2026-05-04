@@ -5,7 +5,7 @@ import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { createSelfScreening } from '@/api/screenings'
 import { fetchAuthMe } from '@/api/auth'
 import { ApiError } from '@/lib/apiClient'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'CheckInStart'>
 
@@ -91,7 +91,7 @@ export function CheckInStartScreen({ navigation }: Props) {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Check-in</Text>
         <Text style={styles.body}>
           This flow covers your medical history, symptom intake, then clinician review once complete.
@@ -107,7 +107,10 @@ export function CheckInStartScreen({ navigation }: Props) {
         {entryMode.state === 'error' ? (
           <View style={styles.inlineState}>
             <Text style={luminaStyles.errorText}>{entryMode.message}</Text>
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => void resolveEntryMode()}>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void resolveEntryMode()}
+            >
               <Text style={luminaStyles.secondaryButtonText}>Retry</Text>
             </Pressable>
           </View>
@@ -122,8 +125,9 @@ export function CheckInStartScreen({ navigation }: Props) {
         {actionError ? <Text style={luminaStyles.errorText}>{actionError}</Text> : null}
 
         <Pressable
-          style={[
+          style={({ pressed }) => [
             luminaStyles.primaryButton,
+            pressed && luminaStyles.pressedButton,
             entryMode.state === 'loading' || entryMode.state === 'error' || busy ? styles.disabled : undefined,
           ]}
           onPress={() => void runPrimaryAction()}
@@ -146,21 +150,16 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'center',
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 10,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   body: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
   inlineState: {
     gap: 8,
@@ -168,6 +167,7 @@ const styles = StyleSheet.create({
   stateText: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
+    fontFamily: luminaFonts.body,
   },
   disabled: {
     opacity: 0.6,

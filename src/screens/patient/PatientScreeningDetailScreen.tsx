@@ -6,8 +6,10 @@ import { fetchScreeningPatient } from '@/api/screenings'
 import { supabase } from '@/lib/supabase'
 import { clearFollowThroughReminderForPatient } from '@/lib/notifications'
 import { ApiError } from '@/lib/apiClient'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
+import { SummarySectionCard } from '@/screens/clinician/components/summary/SummarySectionCard'
+import { SummaryEmptyState } from '@/screens/clinician/components/summary/SummaryEmptyState'
 import { buildMedicalHistoryLines } from '@/screens/patient/medicalHistorySummary'
 import type { PatientScreeningDetail } from '@/types/validation'
 
@@ -91,6 +93,12 @@ function deriveSections(detail: PatientScreeningDetail | null): SectionData[] {
   return sections
 }
 
+function sectionIcon(title: string): 'pulse-outline' | 'document-text-outline' | undefined {
+  if (title === 'Symptoms') return 'pulse-outline'
+  if (title === 'Medical history') return 'document-text-outline'
+  return undefined
+}
+
 export function PatientScreeningDetailScreen({ route, navigation }: Props) {
   const { screeningId } = route.params
   const [loading, setLoading] = useState(true)
@@ -129,8 +137,8 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
   const sections = useMemo(() => deriveSections(detail), [detail])
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
+    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.subtitle}>Your screening symptoms and medical history.</Text>
 
         {loading ? <LoadingState label="Loading screening detail..." /> : null}
@@ -140,22 +148,21 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
           <EmptyState title="No detail available yet" body="Try again shortly." onAction={() => void loadDetail()} actionLabel="Retry" />
         ) : null}
 
-        {sections.map((section) =>
-          section.lines.length > 0 ? (
-            <View key={section.title} style={styles.card}>
-              <Text style={luminaStyles.rowTitleStrong}>{section.title}</Text>
-              {section.lines.map((line, index) => (
+        {sections.map((section) => (
+          <SummarySectionCard key={section.title} title={section.title} icon={sectionIcon(section.title)}>
+            {section.lines.length > 0 ? (
+              section.lines.map((line, index) => (
                 <Text key={`${section.title}-${index}`} style={styles.cardBody}>
                   {line}
                 </Text>
-              ))}
-            </View>
-          ) : (
-            <EmptyState key={section.title} title={section.title} body={section.emptyBody} />
-          )
-        )}
+              ))
+            ) : (
+              <SummaryEmptyState label={section.emptyBody} />
+            )}
+          </SummarySectionCard>
+        ))}
 
-        <View style={styles.card}>
+        <View style={luminaStyles.card}>
           <Text style={luminaStyles.rowTitleStrong}>Share</Text>
           <Text style={styles.cardBody}>Share this screening through the existing share flow.</Text>
           <Pressable
@@ -174,36 +181,16 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 32,
-  },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 16,
-    gap: 12,
-  },
-  title: {
-    color: lumina.onSurface,
-    fontSize: 26,
-    fontWeight: '700',
-  },
   subtitle: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
-  },
-  card: {
-    borderRadius: 24,
-    backgroundColor: lumina.surfaceLowest,
-    padding: 14,
-    gap: 8,
+    fontFamily: luminaFonts.body,
   },
   cardBody: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
     lineHeight: 20,
+    fontFamily: luminaFonts.body,
   },
 })

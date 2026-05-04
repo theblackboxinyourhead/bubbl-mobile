@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { sendOtp, verifyOtpMobile } from '@/api/auth'
 import { ApiError } from '@/lib/apiClient'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'VerifyOtp'>
 
@@ -63,7 +63,7 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Verify phone</Text>
         {maskedDestination ? <Text style={styles.body}>Code sent to {maskedDestination}</Text> : null}
         {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
@@ -85,7 +85,11 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
           textContentType="oneTimeCode"
         />
 
-        <Pressable style={luminaStyles.secondaryButton} onPress={() => void send()} disabled={busy}>
+        <Pressable
+          style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+          onPress={() => void send()}
+          disabled={busy}
+        >
           {busy ? (
             <ActivityIndicator color={lumina.onSurface} />
           ) : (
@@ -93,7 +97,11 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
           )}
         </Pressable>
         <Pressable
-          style={[luminaStyles.primaryButton, (busy || otp.length !== 6) && luminaStyles.primaryButtonDisabled]}
+          style={({ pressed }) => [
+            luminaStyles.primaryButton,
+            pressed && luminaStyles.pressedButton,
+            (busy || otp.length !== 6) && luminaStyles.primaryButtonDisabled,
+          ]}
           onPress={() => void verify()}
           disabled={busy || otp.length !== 6}
         >
@@ -111,21 +119,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexGrow: 1,
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 10,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   body: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
   otpRow: {
     flexDirection: 'row',
@@ -143,7 +146,7 @@ const styles = StyleSheet.create({
   otpDigit: {
     color: lumina.onSurface,
     fontSize: 24,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   hiddenInput: {
     height: 0,

@@ -20,7 +20,7 @@ import { initializeOpenAIRealtime, startConversation, type RealtimeConnection } 
 import type { BaselineContext } from '@/types/baseline'
 import { ApiError } from '@/lib/apiClient'
 import { shouldSkipMedicalHistory } from '@/lib/screening/shouldSkipMedicalHistory'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'Intake'>
 
@@ -336,7 +336,7 @@ export function IntakeScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Live intake</Text>
         <Text style={styles.subtitle}>Two-step flow: Medical history then Symptoms.</Text>
 
@@ -361,7 +361,11 @@ export function IntakeScreen({ route, navigation }: Props) {
         </View>
 
         <Pressable
-          style={[luminaStyles.primaryButton, finishing ? styles.disabled : undefined]}
+          style={({ pressed }) => [
+            luminaStyles.primaryButton,
+            pressed && luminaStyles.pressedButton,
+            finishing ? styles.disabled : undefined,
+          ]}
           onPress={() => void handleContinue()}
           disabled={finishing}
         >
@@ -392,21 +396,16 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'center',
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 12,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   subtitle: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
   progressRow: {
     flexDirection: 'row',
@@ -428,7 +427,7 @@ const styles = StyleSheet.create({
   phaseLabel: {
     color: lumina.onSurfaceVariant,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: luminaFonts.bodySemi,
   },
   phaseLabelActive: {
     color: lumina.primary,
@@ -442,12 +441,13 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: lumina.onSurface,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
   },
   cardBody: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
     lineHeight: 20,
+    fontFamily: luminaFonts.body,
   },
   disabled: {
     opacity: 0.6,

@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { sendOtp } from '@/api/auth'
 import { ApiError } from '@/lib/apiClient'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'InviteEntry'>
 
@@ -41,7 +41,7 @@ export function InviteEntryScreen({ navigation, route }: Props) {
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>{fromLink ? 'You have an invite' : 'Enter invite ID'}</Text>
         <Text style={styles.body}>
           {fromLink
@@ -62,7 +62,11 @@ export function InviteEntryScreen({ navigation, route }: Props) {
 
         {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
         <Pressable
-          style={[luminaStyles.primaryButton, (!screeningId || busy) && luminaStyles.primaryButtonDisabled]}
+          style={({ pressed }) => [
+            luminaStyles.primaryButton,
+            pressed && luminaStyles.pressedButton,
+            (!screeningId || busy) && luminaStyles.primaryButtonDisabled,
+          ]}
           disabled={!screeningId || busy}
           onPress={() => void goVerify()}
         >
@@ -84,20 +88,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexGrow: 1,
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 10,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   body: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
 })

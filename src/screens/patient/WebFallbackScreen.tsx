@@ -2,7 +2,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import * as WebBrowser from 'expo-web-browser'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'WebFallback'>
 
@@ -11,13 +11,13 @@ export function WebFallbackScreen({ route }: Props) {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.stage}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Continue in browser</Text>
         <Text style={styles.body}>
           This link requires browser completion to avoid an app-link loop and keep your account flow safe.
         </Text>
         <Pressable
-          style={luminaStyles.primaryButton}
+          style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
           onPress={() => {
             void WebBrowser.openBrowserAsync(url)
           }}
@@ -35,20 +35,15 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'center',
   },
-  stage: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 12,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   body: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: luminaFonts.body,
   },
 })

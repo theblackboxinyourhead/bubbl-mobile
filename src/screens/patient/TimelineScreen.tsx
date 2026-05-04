@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchPatientHistory } from '@/api/patients'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
+import { formatDateLabel } from '@/lib/datetime'
 
 type Props = PatientTabScreenProps<'Timeline'>
 
@@ -12,14 +14,14 @@ type TimelineItem = {
   createdAt: string
   status: string
   clinicianName: string | null
-  symptomsSummary: string
+  symptomsSummary: string | null
 }
 
-function summarizeSymptoms(symptomsData: unknown): string {
-  if (symptomsData == null) return 'Symptoms summary unavailable.'
+function summarizeSymptoms(symptomsData: unknown): string | null {
+  if (symptomsData == null) return null
   if (typeof symptomsData === 'string') {
     const cleaned = symptomsData.trim()
-    return cleaned || 'Symptoms summary unavailable.'
+    return cleaned || null
   }
   if (Array.isArray(symptomsData)) {
     const labels = symptomsData
@@ -34,7 +36,7 @@ function summarizeSymptoms(symptomsData: unknown): string {
       .filter(Boolean)
       .slice(0, 3)
     if (labels.length > 0) return labels.join(', ')
-    return 'Symptoms summary unavailable.'
+    return null
   }
   if (typeof symptomsData === 'object') {
     const summaryCandidate = (symptomsData as { summary?: unknown }).summary
@@ -44,7 +46,7 @@ function summarizeSymptoms(symptomsData: unknown): string {
     const nestedSymptoms = (symptomsData as { symptoms?: unknown }).symptoms
     return summarizeSymptoms(nestedSymptoms)
   }
-  return 'Symptoms summary unavailable.'
+  return null
 }
 
 type HistoryTone = 'attention' | 'ready' | 'neutral' | 'cancelled'
@@ -126,26 +128,37 @@ export function TimelineScreen({ navigation }: Props) {
 
       {items.length > 0 ? (
         <View style={styles.timelineList}>
-          {items.map((item) => (
-            <Pressable
-              key={item.id}
-              style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
-              onPress={() => navigation.navigate('PatientScreeningDetail', { screeningId: item.id })}
-            >
-              <View style={styles.rowInner}>
-                <View style={[luminaStyles.statusDot, toneDotStyle(historyTone(item.status))]} />
-                <View style={styles.rowTextCol}>
-                  <Text style={luminaStyles.rowTitleStrong}>{new Date(item.createdAt).toLocaleString()}</Text>
-                  <Text style={luminaStyles.metaText}>
-                    {item.status} · {item.clinicianName ?? 'Clinician not listed'}
-                  </Text>
-                  <Text style={luminaStyles.metaText} numberOfLines={3}>
-                    {item.symptomsSummary}
-                  </Text>
+          {items.map((item) => {
+            const formattedDate = formatDateLabel(item.createdAt)
+            const metaText = item.clinicianName
+              ? `${item.status} · ${item.clinicianName}`
+              : item.status
+            return (
+              <Pressable
+                key={item.id}
+                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
+                onPress={() => navigation.navigate('PatientScreeningDetail', { screeningId: item.id })}
+                accessibilityRole="button"
+                accessibilityLabel={`Open screening from ${formattedDate}`}
+              >
+                <View style={styles.rowInner}>
+                  <View style={[luminaStyles.statusDot, toneDotStyle(historyTone(item.status))]} />
+                  <View style={styles.rowTextCol}>
+                    <Text style={luminaStyles.rowTitleStrong}>{formattedDate}</Text>
+                    <Text style={luminaStyles.metaText}>{metaText}</Text>
+                    {item.symptomsSummary ? (
+                      <Text style={luminaStyles.metaText} numberOfLines={3}>
+                        {item.symptomsSummary}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.chevronCell}>
+                    <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+                  </View>
                 </View>
-              </View>
-            </Pressable>
-          ))}
+              </Pressable>
+            )
+          })}
         </View>
       ) : null}
     </ScrollView>
@@ -163,6 +176,10 @@ const styles = StyleSheet.create({
   rowTextCol: {
     flex: 1,
     gap: 3,
+  },
+  chevronCell: {
+    alignSelf: 'center',
+    marginLeft: 4,
   },
   cancelledDot: {
     backgroundColor: lumina.error,

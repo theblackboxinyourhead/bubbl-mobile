@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { updatePatientPhone, verifyPatientRegistrationOtp } from '@/api/auth'
 import { supabase } from '@/lib/supabase'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientPhoneVerification'> & {
   onResolved: () => Promise<void> | void
@@ -70,7 +70,7 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.card}>
+      <View style={luminaStyles.stage}>
         <Text style={styles.title}>Phone verification</Text>
         <Text style={styles.body}>
           {step === 'phone'
@@ -90,7 +90,11 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
               placeholder="(555) 123-4567"
               placeholderTextColor={lumina.onSurfaceVariant}
             />
-            <Pressable style={luminaStyles.primaryButton} onPress={() => void sendOtp()} disabled={busy}>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void sendOtp()}
+              disabled={busy}
+            >
               {busy ? (
                 <ActivityIndicator color={lumina.onPrimary} />
               ) : (
@@ -110,7 +114,11 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
               placeholder="6-digit code"
               placeholderTextColor={lumina.onSurfaceVariant}
             />
-            <Pressable style={luminaStyles.primaryButton} onPress={() => void verify()} disabled={busy || otpCode.length !== 6}>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void verify()}
+              disabled={busy || otpCode.length !== 6}
+            >
               {busy ? (
                 <ActivityIndicator color={lumina.onPrimary} />
               ) : (
@@ -130,21 +138,16 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'center',
   },
-  card: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 10,
-  },
   title: {
     color: lumina.onSurface,
     fontSize: 24,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   body: {
     color: lumina.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 4,
+    fontFamily: luminaFonts.body,
   },
 })
