@@ -12,9 +12,17 @@ import { saveAuthOriginRoleHint, saveOAuthRoleHint } from '@/lib/storage'
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianAuthEntry'> & {
   onBackToRoles: () => void
   bootstrapError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }
 
-export function LoginScreen({ navigation, onBackToRoles, bootstrapError }: Props) {
+export function LoginScreen({
+  navigation,
+  onBackToRoles,
+  bootstrapError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
+}: Props) {
   const [isSignIn, setIsSignIn] = useState(true)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -46,6 +54,7 @@ export function LoginScreen({ navigation, onBackToRoles, bootstrapError }: Props
       await saveAuthOriginRoleHint('clinician')
       if (isSignIn) {
         await signInWithPassword({ email, password })
+        onPasswordSignInAccepted()
         return
       }
       if (!firstName.trim() || !lastName.trim()) {
@@ -89,6 +98,9 @@ export function LoginScreen({ navigation, onBackToRoles, bootstrapError }: Props
     }
   }
 
+  const loading = busy || busyProvider !== null || authBootstrapLoading
+  const passwordSubmitLoading = busy || authBootstrapLoading
+
   const navigatePasswordReset = () => {
     const parent = navigation.getParent()
     if (!parent) return
@@ -108,12 +120,12 @@ export function LoginScreen({ navigation, onBackToRoles, bootstrapError }: Props
         setEmailSent(false)
         setIsSignIn((prev) => !prev)
       }}
-      loading={busy || busyProvider !== null}
+      loading={loading}
       error={error ?? bootstrapError ?? null}
       socialSlot={
         <SocialAuthButtons
           busyProvider={busyProvider}
-          disabled={busy || busyProvider !== null}
+          disabled={loading}
           onGoogle={() => void startOAuth('google')}
           onMicrosoft={() => void startOAuth('microsoft')}
         />
@@ -190,12 +202,12 @@ export function LoginScreen({ navigation, onBackToRoles, bootstrapError }: Props
           <Pressable
             style={[
               luminaStyles.primaryButton,
-              (busy || busyProvider !== null) && luminaStyles.primaryButtonDisabled,
+              loading && luminaStyles.primaryButtonDisabled,
             ]}
             onPress={() => void runEmailFlow()}
-            disabled={busy || busyProvider !== null}
+            disabled={loading}
           >
-            {busy ? (
+            {passwordSubmitLoading ? (
               <ActivityIndicator color={lumina.onPrimary} />
             ) : (
               <Text style={luminaStyles.primaryButtonText}>{isSignIn ? 'Sign in' : 'Create account'}</Text>

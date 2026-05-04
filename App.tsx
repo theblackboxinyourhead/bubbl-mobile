@@ -77,6 +77,7 @@ export default function App() {
   const [clinicianInitial, setClinicianInitial] = useState<keyof ClinicianStackParamList | undefined>()
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [authFlushTick, setAuthFlushTick] = useState(0)
+  const [authBootstrapLoading, setAuthBootstrapLoading] = useState(false)
   const loggedOutPathRef = useRef<LoggedOutPath>('launchChoice')
   const currentUserIdRef = useRef<string | null>(null)
   const skipNextAuthedBootstrapRef = useRef(false)
@@ -97,6 +98,7 @@ export default function App() {
 
   const enterLaunchLoggedOutPath = useCallback(() => {
     loggedOutPathRef.current = 'launchChoice'
+    setAuthBootstrapLoading(false)
     setPatientInitial(undefined)
     setClinicianInitial(undefined)
     setMode('launch')
@@ -104,6 +106,7 @@ export default function App() {
 
   const enterPatientAuthLoggedOutPath = useCallback(() => {
     loggedOutPathRef.current = 'patientAuth'
+    setAuthBootstrapLoading(false)
     setClinicianInitial(undefined)
     setPatientInitial('PatientAuthEntry')
     setMode('patient')
@@ -111,6 +114,7 @@ export default function App() {
 
   const enterPatientInviteLoggedOutPath = useCallback(() => {
     loggedOutPathRef.current = 'patientInvite'
+    setAuthBootstrapLoading(false)
     setClinicianInitial(undefined)
     setPatientInitial('InviteEntry')
     setMode('patient')
@@ -118,6 +122,7 @@ export default function App() {
 
   const enterClinicianAuthLoggedOutPath = useCallback(() => {
     loggedOutPathRef.current = 'clinicianAuth'
+    setAuthBootstrapLoading(false)
     setPatientInitial(undefined)
     setClinicianInitial('ClinicianAuthEntry')
     setMode('clinician')
@@ -125,6 +130,7 @@ export default function App() {
 
   const ensureLaunchMode = useCallback(() => {
     loggedOutPathRef.current = 'launchChoice'
+    setAuthBootstrapLoading(false)
     setPatientInitial(undefined)
     setClinicianInitial(undefined)
     setMode('launch')
@@ -146,6 +152,7 @@ export default function App() {
   )
 
   const routeToLoggedOutPath = useCallback(() => {
+    setAuthBootstrapLoading(false)
     if (loggedOutPathRef.current === 'patientAuth') {
       setClinicianInitial(undefined)
       setPatientInitial('PatientAuthEntry')
@@ -168,6 +175,7 @@ export default function App() {
   }, [enterLaunchLoggedOutPath])
 
   const reconcileSignedOut = useCallback(async () => {
+    setAuthBootstrapLoading(false)
     pendingNav.current = null
     const userId = currentUserIdRef.current
     if (userId) {
@@ -234,6 +242,7 @@ export default function App() {
 
       if (!session) {
         routeToLoggedOutPath()
+        setAuthBootstrapLoading(false)
         setReady(true)
         return
       }
@@ -343,6 +352,9 @@ export default function App() {
           await supabase.auth.signOut()
         }
       } finally {
+        if (pendingNav.current === null) {
+          setAuthBootstrapLoading(false)
+        }
         setReady(true)
       }
     })().finally(() => {
@@ -352,6 +364,11 @@ export default function App() {
     bootstrappingRef.current = task
     await task
   }, [routeToLoggedOutPath])
+
+  const handlePasswordSignInAccepted = useCallback(() => {
+    setAuthBootstrapLoading(true)
+    void runBootstrap()
+  }, [runBootstrap])
 
   const triggerSignOut = useCallback(async () => {
     await supabase.auth.signOut()
@@ -501,6 +518,7 @@ export default function App() {
       !navRoutes.some(r => r.name === 'Clinician')
     ) return
     pendingNav.current = null
+    setAuthBootstrapLoading(false)
     if (p.route === 'detail') {
       navigationRef.navigate('Patient', {
         screen: 'PatientScreeningDetail',
@@ -585,6 +603,8 @@ export default function App() {
                 onAuthResolved={runBootstrap}
                 onEnsureLaunchMode={ensureLaunchMode}
                 bootstrapAuthError={bootstrapError}
+                authBootstrapLoading={authBootstrapLoading}
+                onPasswordSignInAccepted={handlePasswordSignInAccepted}
               />
               <StatusBar style="dark" />
             </NavigationContainer>

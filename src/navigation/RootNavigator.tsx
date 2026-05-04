@@ -340,12 +340,16 @@ export function PatientNavigator({
   onSignOut,
   onAuthResolved,
   bootstrapError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
 }: {
   initial?: keyof PatientStackParamList
   onBackToRoles: () => void
   onSignOut: () => Promise<void> | void
   onAuthResolved: () => Promise<void> | void
   bootstrapError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }) {
   return (
     <PatientStack.Navigator
@@ -360,7 +364,15 @@ export function PatientNavigator({
         name="PatientAuthEntry"
         options={{ title: 'Bubbl' }}
       >
-        {(props) => <PatientAuthEntryScreen {...props} onBackToRoles={onBackToRoles} bootstrapError={bootstrapError} />}
+        {(props) => (
+          <PatientAuthEntryScreen
+            {...props}
+            onBackToRoles={onBackToRoles}
+            bootstrapError={bootstrapError}
+            authBootstrapLoading={authBootstrapLoading}
+            onPasswordSignInAccepted={onPasswordSignInAccepted}
+          />
+        )}
       </PatientStack.Screen>
       <PatientStack.Screen name="PatientPhoneVerification">
         {(props) => <PatientPhoneVerificationScreen {...props} onResolved={onAuthResolved} />}
@@ -395,12 +407,16 @@ export function ClinicianNavigator({
   onSignOut,
   onAuthResolved,
   bootstrapError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
 }: {
   initial?: keyof ClinicianStackParamList
   onBackToRoles: () => void
   onSignOut: () => Promise<void> | void
   onAuthResolved: () => Promise<void> | void
   bootstrapError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }) {
   return (
     <ClinicianStack.Navigator
@@ -412,7 +428,15 @@ export function ClinicianNavigator({
       }}
     >
       <ClinicianStack.Screen name="ClinicianAuthEntry" options={{ title: 'Clinician authentication' }}>
-        {(props) => <LoginScreen {...props} onBackToRoles={onBackToRoles} bootstrapError={bootstrapError} />}
+        {(props) => (
+          <LoginScreen
+            {...props}
+            onBackToRoles={onBackToRoles}
+            bootstrapError={bootstrapError}
+            authBootstrapLoading={authBootstrapLoading}
+            onPasswordSignInAccepted={onPasswordSignInAccepted}
+          />
+        )}
       </ClinicianStack.Screen>
       <ClinicianStack.Screen name="ClinicianCompanyRegistration" options={{ title: 'Company setup' }}>
         {(props) => <ClinicianCompanyRegistrationScreen {...props} onResolved={onAuthResolved} />}
@@ -440,12 +464,16 @@ function PatientStackHost({
   onSignOut,
   onAuthResolved,
   bootstrapError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
 }: {
   patientInitial?: keyof PatientStackParamList
   onBackToRoles: () => void
   onSignOut: () => Promise<void> | void
   onAuthResolved: () => Promise<void> | void
   bootstrapError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }) {
   return (
     <PatientNavigator
@@ -454,6 +482,8 @@ function PatientStackHost({
       onSignOut={onSignOut}
       onAuthResolved={onAuthResolved}
       bootstrapError={bootstrapError}
+      authBootstrapLoading={authBootstrapLoading}
+      onPasswordSignInAccepted={onPasswordSignInAccepted}
     />
   )
 }
@@ -464,12 +494,16 @@ function ClinicianStackHost({
   onSignOut,
   onAuthResolved,
   bootstrapError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
 }: {
   clinicianInitial?: keyof ClinicianStackParamList
   onBackToRoles: () => void
   onSignOut: () => Promise<void> | void
   onAuthResolved: () => Promise<void> | void
   bootstrapError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }) {
   return (
     <ClinicianNavigator
@@ -478,6 +512,8 @@ function ClinicianStackHost({
       onSignOut={onSignOut}
       onAuthResolved={onAuthResolved}
       bootstrapError={bootstrapError}
+      authBootstrapLoading={authBootstrapLoading}
+      onPasswordSignInAccepted={onPasswordSignInAccepted}
     />
   )
 }
@@ -493,6 +529,8 @@ export function RootNavigator({
   onAuthResolved,
   onEnsureLaunchMode,
   bootstrapAuthError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
 }: {
   mode: 'launch' | 'patient' | 'clinician'
   patientInitial?: keyof PatientStackParamList
@@ -504,6 +542,8 @@ export function RootNavigator({
   onAuthResolved: () => Promise<void> | void
   onEnsureLaunchMode: () => void
   bootstrapAuthError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }) {
   return (
     <RootStack.Navigator
@@ -533,6 +573,8 @@ export function RootNavigator({
               onSignOut={onSignOut}
               onAuthResolved={onAuthResolved}
               bootstrapError={bootstrapAuthError}
+              authBootstrapLoading={authBootstrapLoading}
+              onPasswordSignInAccepted={onPasswordSignInAccepted}
             />
           )}
         </RootStack.Screen>
@@ -547,6 +589,8 @@ export function RootNavigator({
               onSignOut={onSignOut}
               onAuthResolved={onAuthResolved}
               bootstrapError={bootstrapAuthError}
+              authBootstrapLoading={authBootstrapLoading}
+              onPasswordSignInAccepted={onPasswordSignInAccepted}
             />
           )}
         </RootStack.Screen>

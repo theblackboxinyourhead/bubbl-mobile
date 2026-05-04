@@ -12,6 +12,8 @@ import { saveAuthOriginRoleHint, saveOAuthRoleHint } from '@/lib/storage'
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientAuthEntry'> & {
   onBackToRoles: () => void
   bootstrapError?: string | null
+  authBootstrapLoading: boolean
+  onPasswordSignInAccepted: () => void
 }
 
 function normalizePhone(value: string): string {
@@ -22,7 +24,13 @@ function normalizePhone(value: string): string {
   return `+${digits}`
 }
 
-export function PatientAuthEntryScreen({ navigation, onBackToRoles, bootstrapError }: Props) {
+export function PatientAuthEntryScreen({
+  navigation,
+  onBackToRoles,
+  bootstrapError,
+  authBootstrapLoading,
+  onPasswordSignInAccepted,
+}: Props) {
   const [isSignIn, setIsSignIn] = useState(true)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -54,6 +62,7 @@ export function PatientAuthEntryScreen({ navigation, onBackToRoles, bootstrapErr
       await saveAuthOriginRoleHint('patient')
       if (isSignIn) {
         await signInWithPassword({ email, password })
+        onPasswordSignInAccepted()
         return
       }
       if (!firstName.trim() || !lastName.trim()) {
@@ -102,6 +111,9 @@ export function PatientAuthEntryScreen({ navigation, onBackToRoles, bootstrapErr
     }
   }
 
+  const loading = busy || busyProvider !== null || authBootstrapLoading
+  const passwordSubmitLoading = busy || authBootstrapLoading
+
   const navigatePasswordReset = () => {
     const parent = navigation.getParent()
     if (!parent) return
@@ -121,12 +133,12 @@ export function PatientAuthEntryScreen({ navigation, onBackToRoles, bootstrapErr
         setEmailSent(false)
         setIsSignIn((prev) => !prev)
       }}
-      loading={busy || busyProvider !== null}
+      loading={loading}
       error={error ?? bootstrapError ?? null}
       socialSlot={
         <SocialAuthButtons
           busyProvider={busyProvider}
-          disabled={busy || busyProvider !== null}
+          disabled={loading}
           onGoogle={() => void startOAuth('google')}
           onMicrosoft={() => void startOAuth('microsoft')}
         />
@@ -207,19 +219,23 @@ export function PatientAuthEntryScreen({ navigation, onBackToRoles, bootstrapErr
           <Pressable
             style={[
               luminaStyles.primaryButton,
-              (busy || busyProvider !== null) && luminaStyles.primaryButtonDisabled,
+              loading && luminaStyles.primaryButtonDisabled,
             ]}
             onPress={() => void runEmailFlow()}
-            disabled={busy || busyProvider !== null}
+            disabled={loading}
           >
-            {busy ? (
+            {passwordSubmitLoading ? (
               <ActivityIndicator color={lumina.onPrimary} />
             ) : (
               <Text style={luminaStyles.primaryButtonText}>{isSignIn ? 'Sign in' : 'Create account'}</Text>
             )}
           </Pressable>
 
-          <Pressable style={luminaStyles.secondaryButton} onPress={() => navigation.navigate('InviteEntry')}>
+          <Pressable
+            style={luminaStyles.secondaryButton}
+            onPress={() => navigation.navigate('InviteEntry')}
+            disabled={loading}
+          >
             <Text style={luminaStyles.secondaryButtonText}>I have an invite</Text>
           </Pressable>
         </View>
