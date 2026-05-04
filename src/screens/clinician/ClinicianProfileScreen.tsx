@@ -4,9 +4,10 @@ import { useFocusEffect } from '@react-navigation/native'
 import Constants from 'expo-constants'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
+import { fetchClinicianSettings, type ClinicianSettings } from '@/api/clinicians'
 import { supabase } from '@/lib/supabase'
 import { ErrorState, LoadingState } from '@/screens/shared/ScreenState'
-import { SummaryBadge } from '@/screens/clinician/components/summary/SummaryBadge'
+import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
 import { SummaryDataRow } from '@/screens/clinician/components/summary/SummaryDataRow'
 import { SummarySectionCard } from '@/screens/clinician/components/summary/SummarySectionCard'
 import { SummaryEmptyState } from '@/screens/clinician/components/summary/SummaryEmptyState'
@@ -16,6 +17,44 @@ type Props = ClinicianTabScreenProps<'ClinicianProfile'> & {
   onSignOut: () => Promise<void> | void
 }
 
+function formatFullName(firstName: string, lastName: string): string | null {
+  const first = firstName.trim()
+  const last = lastName.trim()
+  const joined = [first, last].filter((p) => p.length > 0).join(' ')
+  return joined.length > 0 ? joined : null
+}
+
+function dedupeAddress(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const seen = new Set<string>()
+  const parts: string[] = []
+  for (const raw of trimmed.split(',')) {
+    const part = raw.trim()
+    if (!part) continue
+    const key = part.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    parts.push(part)
+  }
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
+function formatPhoneForDisplay(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const digits = trimmed.replace(/\D/g, '')
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  return trimmed
+}
+
 export function ClinicianProfileScreen({ onSignOut }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -23,6 +62,7 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
   const [role, setRole] = useState<string | null>(null)
   const [supportEmail, setSupportEmail] = useState<string | null>(null)
   const [supportPhone, setSupportPhone] = useState<string | null>(null)
+  const [settings, setSettings] = useState<ClinicianSettings | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -38,12 +78,21 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
       const scPhone = me.supportContact?.phone?.trim()
       setSupportEmail(scEmail || null)
       setSupportPhone(scPhone || null)
+      const nextSettings =
+        me.user.user_type === 'clinician'
+          ? await fetchClinicianSettings().catch((settingsError) => {
+              if (__DEV__) console.error('[mobile clinician profile] settings load failed', settingsError)
+              return null
+            })
+          : null
+      setSettings(nextSettings)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load profile.')
       setEmail(null)
       setRole(null)
       setSupportEmail(null)
       setSupportPhone(null)
+      setSettings(null)
     } finally {
       setLoading(false)
     }
@@ -55,6 +104,24 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
     }, [load])
   )
 
+  const inboundStatus = settings?.inboundAdmin.status
+  const inboundAdminStatusLabel =
+    inboundStatus === 'enabled'
+      ? 'Enabled'
+      : inboundStatus === 'blocked'
+        ? 'Blocked'
+        : inboundStatus === 'needs_attention'
+          ? 'Needs attention'
+          : 'Not enabled'
+  const inboundAdminStatusTone: SummaryBadgeTone =
+    inboundStatus === 'enabled'
+      ? 'badge-green'
+      : inboundStatus === 'blocked'
+        ? 'badge-red'
+        : inboundStatus === 'needs_attention'
+          ? 'badge-yellow'
+          : 'badge-gray'
+
   return (
     <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
       {loading ? <LoadingState label="Loading profile..." /> : null}
@@ -62,8 +129,16 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
 
       {!loading && !error ? (
         <>
-          <SummarySectionCard title="Identity" icon="person-outline">
+          <SummarySectionCard title="Profile" icon="person-outline">
+            <SummaryDataRow
+              inline
+              label="Name"
+              value={formatFullName(settings?.provider.firstName ?? '', settings?.provider.lastName ?? '')}
+            />
             <SummaryDataRow inline label="Email" value={email} />
+            <SummaryDataRow inline label="Clinic name" value={settings?.clinic.name || null} />
+            <SummaryDataRow inline label="Clinic phone" value={formatPhoneForDisplay(settings?.clinic.phone)} />
+            <InlineWrapRow label="Address" value={dedupeAddress(settings?.clinic.address)} />
             <SummaryDataRow
               inline
               label="Role"
@@ -74,6 +149,40 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
                 />
               }
             />
+          </SummarySectionCard>
+
+          <SummarySectionCard title="Inbound admin calls" icon="call-outline">
+            <SummaryDataRow
+              inline
+              label="Status"
+              valueNode={<SummaryBadge tone={inboundAdminStatusTone} label={inboundAdminStatusLabel} />}
+            />
+            <SummaryDataRow
+              inline
+              label="Clinic primary phone"
+              value={formatPhoneForDisplay(settings?.clinic.phone)}
+            />
+            {settings?.inboundAdmin.message ? (
+              <SummaryDataRow inline label="Message" value={settings.inboundAdmin.message} />
+            ) : null}
+            {settings &&
+            (settings.inboundAdmin.status === 'enabled' || settings.inboundAdmin.status === 'needs_attention') &&
+            settings.inboundAdmin.inboundAdminTwilioNumber ? (
+              <SummaryDataRow
+                inline
+                label="Bubbl call-in number"
+                value={formatPhoneForDisplay(settings.inboundAdmin.inboundAdminTwilioNumber)}
+              />
+            ) : null}
+            {settings?.inboundAdmin.status === 'enabled' ? (
+              <>
+                <SummaryDataRow inline label="Option 1" value="Share this number with patients." />
+                <InlineWrapRow
+                  label="Option 2"
+                  value="Forward your clinic's existing line to this number."
+                />
+              </>
+            ) : null}
           </SummarySectionCard>
 
           <SummarySectionCard title="Support" icon="help-circle-outline">
@@ -99,6 +208,16 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
   )
 }
 
+function InlineWrapRow({ label, value }: { label: string; value: string | null }) {
+  const display = value && value.trim().length > 0 ? value : '—'
+  return (
+    <View style={styles.wrapRow}>
+      <Text style={styles.wrapLabel}>{label}</Text>
+      <Text style={styles.wrapValue}>{display}</Text>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   footer: {
     paddingVertical: 24,
@@ -108,5 +227,24 @@ const styles = StyleSheet.create({
     color: lumina.onSurfaceVariant,
     fontSize: 12,
     fontFamily: luminaFonts.bodyMedium,
+  },
+  wrapRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  wrapLabel: {
+    flexShrink: 0,
+    paddingTop: 3,
+    color: lumina.onSurfaceVariant,
+    fontSize: 12,
+    fontFamily: luminaFonts.bodyMedium,
+  },
+  wrapValue: {
+    flex: 1,
+    color: lumina.onSurface,
+    fontSize: 15,
+    fontFamily: luminaFonts.bodySemi,
+    lineHeight: 20,
   },
 })

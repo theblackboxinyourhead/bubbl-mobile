@@ -1,5 +1,59 @@
 import { apiJson } from '@/lib/apiClient'
 
+export type InboundAdminStatus = 'enabled' | 'blocked' | 'needs_attention' | 'not_enabled'
+export type InboundAdminNotEnabledReason = 'no_available_numbers'
+export type InboundAdminBlockedReason =
+  | 'missing_company'
+  | 'feature_flags_disabled'
+  | 'missing_twilio_credentials'
+  | 'missing_webhook_base_url'
+  | 'missing_media_bridge_url'
+  | 'missing_scheduling_config'
+  | 'unknown_company_phone_country'
+export type InboundAdminNeedsAttentionReason =
+  | 'twilio_number_not_owned'
+  | 'twilio_webhook_update_failed'
+  | 'twilio_lookup_failed'
+
+export type InboundAdminState = {
+  status: InboundAdminStatus
+  inboundAdminTwilioNumber: string | null
+  notEnabledReason?: InboundAdminNotEnabledReason
+  blockedReason?: InboundAdminBlockedReason
+  needsAttentionReason?: InboundAdminNeedsAttentionReason
+  message?: string
+}
+
+export type ClinicianSettings = {
+  provider: {
+    firstName: string
+    lastName: string
+    email: string
+    phone?: string
+  }
+  clinic: {
+    name: string
+    address?: string
+    city?: string
+    state?: string
+    zip?: string
+    phone?: string
+    email?: string
+  }
+  notifications: {
+    emailAlerts: boolean
+    smsAlerts: boolean
+    newPatientNotifications: boolean
+    completedScreeningNotifications: boolean
+  }
+  requireMedicalHistoryDefault: boolean
+  inboundAdmin: InboundAdminState
+}
+
+export async function fetchClinicianSettings(): Promise<ClinicianSettings> {
+  return apiJson<ClinicianSettings>('/api/clinicians/settings')
+}
+
 export type ClinicianDashboardAction =
   | 'open_call'
   | 'open_screening'
