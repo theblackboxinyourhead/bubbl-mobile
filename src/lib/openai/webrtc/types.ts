@@ -84,6 +84,7 @@ export interface ConnectionState {
   stageEntryResponseTimeoutMs: number
   audioTrack?: MediaStreamTrack
   micMuted: boolean
+  intentionalDisconnect: boolean
 }
 
 export function createConnectionState(sessionId: string): ConnectionState {
@@ -111,6 +112,7 @@ export function createConnectionState(sessionId: string): ConnectionState {
     stageEntryCancelCooldownMs: 500,
     stageEntryResponseTimeoutMs: 3000,
     micMuted: false,
+    intentionalDisconnect: false,
   }
 }
 

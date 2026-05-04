@@ -157,6 +157,7 @@ export async function initializeOpenAIRealtime(
     sendAudio: () => {},
     disconnect: () => {
       try {
+        connectionState.intentionalDisconnect = true
         if (connectionState.stageEntryExpectation || connectionState.stageEntryGuard) {
           clearStageEntryGuard(connectionState, 'component-teardown')
         }

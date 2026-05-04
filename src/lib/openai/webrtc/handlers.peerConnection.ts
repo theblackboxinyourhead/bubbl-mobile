@@ -33,10 +33,31 @@ export function setupPeerConnectionHandlers(
       clearDisconnectTimer()
       return
     }
+    if (
+      connectionState.intentionalDisconnect === true &&
+      (state === 'disconnected' || state === 'failed' || state === 'closed')
+    ) {
+      clearDisconnectTimer()
+      cleanupAudioElements(connectionState, { closeWindowFirst: false })
+      appSub.remove()
+      console.log(
+        `[Realtime] Intentional disconnect peer state=${state} (sessionId: ${connectionState.sessionId})`
+      )
+      return
+    }
     if (state === 'disconnected') {
       if (disconnectTimer === null) {
         disconnectTimer = setTimeout(() => {
           if (peerConnection.connectionState === 'disconnected') {
+            if (connectionState.intentionalDisconnect === true) {
+              cleanupAudioElements(connectionState, { closeWindowFirst: false })
+              appSub.remove()
+              console.log(
+                `[Realtime] Intentional disconnect timeout (sessionId: ${connectionState.sessionId})`
+              )
+              disconnectTimer = null
+              return
+            }
             if (connectionState.stageEntryExpectation || connectionState.stageEntryGuard) {
               clearStageEntryGuard(connectionState, 'peer-connection-disconnect')
             }
