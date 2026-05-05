@@ -109,6 +109,29 @@ export function setupDataChannelHandlers(
       .trim()
   }
 
+  const isClearUserClosureTranscript = (userTranscript: string): boolean => {
+    const closurePhrases = new Set<string>([
+      'no',
+      'no thats all',
+      'no that is all',
+      'no thats it',
+      'no that is it',
+      'no nothing else',
+      'no there isnt',
+      'no there is not',
+      'nothing else',
+      'none',
+      'thats all',
+      'that is all',
+      'thats it',
+      'that is it',
+      'all good',
+      'im done',
+      'i am done',
+    ])
+    return closurePhrases.has(normalizeEchoText(userTranscript))
+  }
+
   const isPostAssistantWindow = (): boolean => {
     return vadEnabledAtMs > 0 && Date.now() - vadEnabledAtMs <= POST_ASSISTANT_ECHO_WINDOW_MS
   }
@@ -1070,20 +1093,36 @@ export function setupDataChannelHandlers(
             const userTranscript = d.transcript?.trim()
             const stillContaminated = clearExpiredContamination()
             if (stillContaminated) {
-              if (userTranscript) {
-                const normalizedRejected = normalizeEchoText(userTranscript)
-                lastRejectedEchoHash = hashTranscriptForLog(normalizedRejected)
-                lastRejectedEchoAtMs = Date.now()
-                rejectCompletedInput(
-                  'contaminated-window',
-                  userItemId,
-                  userTranscript.length,
-                  hashTranscriptForLog(userTranscript)
+              const canAllowContaminatedClosure =
+                currentStage === Stage.MedicalHistory || currentStage === Stage.Symptoms
+              if (
+                userTranscript &&
+                canAllowContaminatedClosure &&
+                isClearUserClosureTranscript(userTranscript) &&
+                !isLikelyPostAssistantEcho(userTranscript)
+              ) {
+                inputWindowContaminated = false
+                rejectNextCompletedTranscript = false
+                rejectContaminatedTranscriptUntilMs = 0
+                console.log(
+                  `🟢 [Realtime Echo] contaminated closure transcript allowed (session: ${connectionState.sessionId}, stage: ${Stage[currentStage]}, transcriptLength: ${userTranscript.length}, transcriptHash: ${hashTranscriptForLog(userTranscript)}, reason: clear-user-closure)`
                 )
               } else {
-                rejectCompletedInput('contaminated-window', userItemId)
+                if (userTranscript) {
+                  const normalizedRejected = normalizeEchoText(userTranscript)
+                  lastRejectedEchoHash = hashTranscriptForLog(normalizedRejected)
+                  lastRejectedEchoAtMs = Date.now()
+                  rejectCompletedInput(
+                    'contaminated-window',
+                    userItemId,
+                    userTranscript.length,
+                    hashTranscriptForLog(userTranscript)
+                  )
+                } else {
+                  rejectCompletedInput('contaminated-window', userItemId)
+                }
+                break
               }
-              break
             }
             if (!userTranscript) {
               if (userItemId) {
