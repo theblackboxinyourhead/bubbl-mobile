@@ -373,7 +373,7 @@ export function IntakeScreen({ route, navigation }: Props) {
             <ActivityIndicator color={lumina.onPrimary} />
           ) : (
             <Text style={luminaStyles.primaryButtonText}>
-              {currentPhase === 'medical-history' ? 'Submit history and continue' : 'End intake and move to review'}
+              {currentPhase === 'medical-history' ? 'Submit history' : 'Finish screening'}
             </Text>
           )}
         </Pressable>
