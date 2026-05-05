@@ -18,12 +18,10 @@ import { ConsentScreen } from '@/screens/patient/ConsentScreen'
 import { IntakeScreen } from '@/screens/patient/IntakeScreen'
 import { ReviewConfirmScreen } from '@/screens/patient/ReviewConfirmScreen'
 import { CompleteScreen } from '@/screens/patient/CompleteScreen'
-import { Phase1PatientLandingScreen } from '@/screens/patient/Phase1PatientLandingScreen'
 import { TimelineScreen } from '@/screens/patient/TimelineScreen'
 import { PatientHomeScreen } from '@/screens/patient/PatientHomeScreen'
 import { PatientScreeningDetailScreen } from '@/screens/patient/PatientScreeningDetailScreen'
 import { CheckInStartScreen } from '@/screens/patient/CheckInStartScreen'
-import { ShareScreen } from '@/screens/patient/ShareScreen'
 import { ProfileScreen } from '@/screens/patient/ProfileScreen'
 import { PatientAuthEntryScreen } from '@/screens/patient/PatientAuthEntryScreen'
 import { PatientPhoneVerificationScreen } from '@/screens/patient/PatientPhoneVerificationScreen'
@@ -67,11 +65,9 @@ export type PatientStackParamList = {
   Intake: { screeningId: string; source: 'invite' | 'self' }
   ReviewConfirm: { screeningId: string; source: 'invite' | 'self' }
   Complete: { screeningId: string }
-  Phase1PatientLanding: undefined
   PatientTabs: NavigatorScreenParams<PatientTabParamList> | undefined
   PatientScreeningDetail: { screeningId: string }
   CheckInStart: undefined
-  Share: { screeningId?: string }
 }
 
 export type ClinicianStackParamList = {
@@ -383,9 +379,8 @@ export function PatientNavigator({
       <PatientStack.Screen name="Consent" component={ConsentScreen} />
       <PatientStack.Screen name="Intake" component={IntakeScreen} options={{ title: 'Intake' }} />
       <PatientStack.Screen name="ReviewConfirm" component={ReviewConfirmScreen} />
-      <PatientStack.Screen name="Complete" component={CompleteScreen} />
-      <PatientStack.Screen name="Phase1PatientLanding">
-        {(props) => <Phase1PatientLandingScreen {...props} onSignOut={onSignOut} />}
+      <PatientStack.Screen name="Complete">
+        {(props) => <CompleteScreen {...props} onSignOut={onSignOut} />}
       </PatientStack.Screen>
       <PatientStack.Screen name="PatientTabs" options={{ headerShown: false }}>
         {() => <PatientTabsNavigator onSignOut={onSignOut} />}
@@ -396,7 +391,6 @@ export function PatientNavigator({
         options={{ ...buildAuthenticatedDetailHeaderOptions(), title: 'Screening', headerBackTitle: 'Back' }}
       />
       <PatientStack.Screen name="CheckInStart" component={CheckInStartScreen} />
-      <PatientStack.Screen name="Share" component={ShareScreen} />
     </PatientStack.Navigator>
   )
 }

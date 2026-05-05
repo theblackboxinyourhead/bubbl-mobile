@@ -7,16 +7,9 @@ import { supabase } from '@/lib/supabase'
 import { saveActiveScreeningContext } from '@/lib/storage'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { ApiError } from '@/lib/apiClient'
-import { ErrorState, LoadingState, EmptyState } from '@/screens/shared/ScreenState'
+import { ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { buildMedicalHistoryLines } from '@/screens/patient/medicalHistorySummary'
 import type { PatientScreeningDetail } from '@/types/validation'
-
-type Props = NativeStackScreenProps<PatientStackParamList, 'ReviewConfirm'>
-
-type ReviewSection = {
-  title: string
-  lines: string[]
-}
 
 function asString(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -24,87 +17,56 @@ function asString(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
-function deriveReviewSections(detail: PatientScreeningDetail | null): ReviewSection[] {
-  if (!detail) return []
-  const sections: ReviewSection[] = []
-
-  const history = detail.medicalHistory ?? null
-  const symptoms = detail.symptoms ?? null
-  const assessment = detail.preliminaryAssessment ?? null
-  const supplemental = asString(detail.screeningSummary)
-
-  const historyLines = buildMedicalHistoryLines(history)
-  sections.push({
-    title: 'Medical history',
-    lines: historyLines.length > 0 ? historyLines : ['No medical history summary is available yet.'],
-  })
-
-  const symptomLines: string[] = []
-  if (symptoms) {
-    symptoms.slice(0, 6).forEach((item) => {
-      const description = asString(item.description)
-      if (description) symptomLines.push(description)
-    })
-  }
-  sections.push({
-    title: 'Symptoms',
-    lines: symptomLines.length > 0 ? symptomLines : ['No symptom summary is available yet.'],
-  })
-
-  const assessmentLines: string[] = []
-  if (assessment) {
-    const summary = asString(assessment.summary)
-    if (summary) assessmentLines.push(summary)
-    const diagnoses = assessment.diagnoses
-    if (diagnoses) {
-      diagnoses.slice(0, 3).forEach((item) => {
-        const condition = asString(item.condition)
-        const confidence = item.confidence
-        if (condition) {
-          assessmentLines.push(
-            typeof confidence === 'number'
-              ? `${condition} (${confidence}% confidence)`
-              : condition
-          )
-        }
-      })
-    }
-  }
-  if (supplemental) {
-    assessmentLines.push(`Summary: ${supplemental}`)
-  }
-  sections.push({
-    title: 'Preliminary assessment',
-    lines: assessmentLines.length > 0 ? assessmentLines : ['No assessment summary is available yet.'],
-  })
-
-  return sections
-}
+type Props = NativeStackScreenProps<PatientStackParamList, 'ReviewConfirm'>
 
 export function ReviewConfirmScreen({ route, navigation }: Props) {
   const { screeningId, source } = route.params
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [detail, setDetail] = useState<PatientScreeningDetail | null>(null)
   const [canComplete, setCanComplete] = useState<boolean | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [patientInputs, setPatientInputs] = useState<{
+    symptoms: PatientScreeningDetail['symptoms'] | null
+    medicalHistory: PatientScreeningDetail['medicalHistory'] | null
+  }>({ symptoms: null, medicalHistory: null })
 
   const load = async () => {
     setLoading(true)
     setLoadError(null)
     try {
       const s = await fetchScreeningPatient(screeningId)
-      setDetail(s)
       setCanComplete(s.resumeState?.canComplete ?? null)
+      setPatientInputs({
+        symptoms: s.symptoms ?? null,
+        medicalHistory: s.medicalHistory ?? null,
+      })
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : 'Review content is currently unavailable.')
-      setDetail(null)
+      setLoadError(e instanceof Error ? e.message : 'Submission status is currently unavailable.')
       setCanComplete(null)
+      setPatientInputs({ symptoms: null, medicalHistory: null })
     } finally {
       setLoading(false)
     }
   }
+
+  const symptomLines = useMemo(() => {
+    const list = patientInputs.symptoms
+    if (!Array.isArray(list)) return []
+    const out: string[] = []
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object') continue
+      const desc = asString((entry as Record<string, unknown>).description)
+      if (desc) out.push(desc)
+      if (out.length >= 6) break
+    }
+    return out
+  }, [patientInputs.symptoms])
+
+  const medicalHistoryLines = useMemo(
+    () => buildMedicalHistoryLines(patientInputs.medicalHistory ?? null),
+    [patientInputs.medicalHistory]
+  )
 
   useEffect(() => {
     void load()
@@ -126,7 +88,7 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
       setSubmitError('Could not complete this screening.')
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        setSubmitError('Review is still pending. Resume intake to complete remaining steps.')
+        setSubmitError('Continue editing to finish the required check-in steps before submitting.')
       } else {
         setSubmitError('Could not complete this screening.')
       }
@@ -135,45 +97,62 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
     }
   }
 
-  const sections = useMemo(() => deriveReviewSections(detail), [detail])
-
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
       <View style={luminaStyles.stage}>
-        <Text style={styles.title}>Review and confirm</Text>
-        <Text style={styles.subtitle}>Review your intake summary before final submission.</Text>
+        <Text style={styles.title}>Ready to submit</Text>
+        <Text style={styles.subtitle}>
+          You&apos;re about to submit your check-in to your clinic. Your clinician will review it before your visit.
+        </Text>
 
-        {loading ? <LoadingState label="Loading review..." /> : null}
+        {loading ? <LoadingState label="Checking submission status..." /> : null}
         {loadError ? (
           <ErrorState
-            title="Review content unavailable"
+            title="Submission status unavailable"
             body={loadError}
             onRetry={() => void load()}
           />
         ) : null}
 
-        {!loading && !loadError && sections.length === 0 ? (
-          <EmptyState title="No review data yet" body="Resume intake to continue." />
-        ) : null}
-
-        {sections.map((section) => (
-          <View key={section.title} style={styles.card}>
-            <Text style={styles.cardTitle}>{section.title}</Text>
-            {section.lines.map((line, index) => (
-              <Text key={`${section.title}-${index}`} style={styles.cardBody}>
-                {line}
-              </Text>
-            ))}
-          </View>
-        ))}
-
         {canComplete === false ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Review pending</Text>
+            <Text style={styles.cardTitle}>More information needed</Text>
             <Text style={styles.cardBody}>
-              This screening is not ready to complete yet. Resume intake to finish required steps.
+              Continue editing to finish the required check-in steps before submitting.
             </Text>
           </View>
+        ) : null}
+
+        {!loading && !loadError ? (
+          symptomLines.length === 0 && medicalHistoryLines.length === 0 ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Submitted information</Text>
+              <Text style={styles.cardBody}>Your clinic will review the information you shared.</Text>
+            </View>
+          ) : (
+            <>
+              {symptomLines.length > 0 ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Symptoms</Text>
+                  {symptomLines.map((line, idx) => (
+                    <Text key={`sym-${idx}`} style={styles.cardBody}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              {medicalHistoryLines.length > 0 ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Medical history</Text>
+                  {medicalHistoryLines.map((line, idx) => (
+                    <Text key={`mh-${idx}`} style={styles.cardBody}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+            </>
+          )
         ) : null}
 
         {submitError ? <Text style={luminaStyles.errorText}>{submitError}</Text> : null}
@@ -190,7 +169,7 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
           {submitting ? (
             <ActivityIndicator color={lumina.onPrimary} />
           ) : (
-            <Text style={luminaStyles.primaryButtonText}>Confirm and complete</Text>
+            <Text style={luminaStyles.primaryButtonText}>Submit check-in</Text>
           )}
         </Pressable>
 
@@ -199,7 +178,7 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
           onPress={() => navigation.replace('Intake', { screeningId, source })}
           disabled={submitting}
         >
-          <Text style={luminaStyles.secondaryButtonText}>Resume intake</Text>
+          <Text style={luminaStyles.secondaryButtonText}>Continue editing</Text>
         </Pressable>
       </View>
     </ScrollView>

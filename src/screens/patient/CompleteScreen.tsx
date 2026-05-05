@@ -5,23 +5,34 @@ import { supabase } from '@/lib/supabase'
 import { saveActiveScreeningContext } from '@/lib/storage'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
-type Props = NativeStackScreenProps<PatientStackParamList, 'Complete'>
+type Props = NativeStackScreenProps<PatientStackParamList, 'Complete'> & {
+  onSignOut: () => Promise<void> | void
+}
 
-export function CompleteScreen({ navigation }: Props) {
+export function CompleteScreen({ navigation, onSignOut }: Props) {
   return (
     <View style={styles.screen}>
       <View style={luminaStyles.stage}>
-        <Text style={styles.title}>You are all set</Text>
-        <Text style={styles.body}>Your clinician will review what you shared.</Text>
+        <Text style={styles.title}>You&apos;re all set</Text>
+        <Text style={styles.body}>Your check-in has been submitted. Your clinic will review it before your visit.</Text>
         <Pressable
           style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
           onPress={async () => {
             const uid = (await supabase.auth.getUser()).data.user?.id
             if (uid) await saveActiveScreeningContext(uid, null)
-            navigation.reset({ index: 0, routes: [{ name: 'Phase1PatientLanding' }] })
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'PatientTabs', params: { screen: 'PatientHome' } }],
+            })
           }}
         >
-          <Text style={luminaStyles.primaryButtonText}>Done</Text>
+          <Text style={luminaStyles.primaryButtonText}>Back to home</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+          onPress={() => void onSignOut()}
+        >
+          <Text style={luminaStyles.secondaryButtonText}>Sign out</Text>
         </Pressable>
       </View>
     </View>
