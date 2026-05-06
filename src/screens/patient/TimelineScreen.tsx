@@ -12,9 +12,15 @@ type Props = PatientTabScreenProps<'Timeline'>
 type TimelineItem = {
   id: string
   createdAt: string
-  status: string
+  historyAt: string | null
   clinicianName: string | null
   symptomsSummary: string | null
+}
+
+function timestampOf(value: string | null | undefined): number {
+  if (typeof value !== 'string' || value.length === 0) return 0
+  const parsed = new Date(value).getTime()
+  return Number.isNaN(parsed) ? 0 : parsed
 }
 
 function summarizeSymptoms(symptomsData: unknown): string | null {
@@ -49,23 +55,6 @@ function summarizeSymptoms(symptomsData: unknown): string | null {
   return null
 }
 
-type HistoryTone = 'attention' | 'ready' | 'neutral' | 'cancelled'
-
-function historyTone(status: string): HistoryTone {
-  const s = status.trim().toLowerCase()
-  if (s === 'completed') return 'ready'
-  if (s === 'cancelled') return 'cancelled'
-  if (s.includes('pending') || s.includes('sent') || s.includes('review')) return 'attention'
-  return 'neutral'
-}
-
-function toneDotStyle(tone: HistoryTone) {
-  if (tone === 'ready') return luminaStyles.statusDotReady
-  if (tone === 'attention') return luminaStyles.statusDotAttention
-  if (tone === 'cancelled') return styles.cancelledDot
-  return luminaStyles.statusDotNeutral
-}
-
 export function TimelineScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +69,8 @@ export function TimelineScreen({ navigation }: Props) {
         screenings?: {
           id?: string
           createdAt?: string
+          completedAt?: string | null
+          updatedAt?: string | null
           status_details?: { name?: string } | null
           clinician?: { firstName?: string; lastName?: string } | null
           symptoms?: { symptomsData?: unknown } | null
@@ -87,19 +78,38 @@ export function TimelineScreen({ navigation }: Props) {
       }
       const screenings = Array.isArray(raw.screenings) ? raw.screenings : []
       const mapped = screenings
-        .filter((screening) => typeof screening.id === 'string' && typeof screening.createdAt === 'string')
+        .filter(
+          (screening) =>
+            typeof screening.id === 'string' &&
+            typeof screening.createdAt === 'string' &&
+            typeof screening.status_details?.name === 'string' &&
+            screening.status_details.name.trim().toLowerCase() === 'completed'
+        )
         .map((screening) => {
           const firstName = screening.clinician?.firstName?.trim() ?? ''
           const lastName = screening.clinician?.lastName?.trim() ?? ''
           const clinicianName = firstName || lastName ? `${firstName} ${lastName}`.trim() : null
+          const candidates: Array<string | null | undefined> = [
+            screening.completedAt,
+            screening.updatedAt,
+            screening.createdAt,
+          ]
+          let historyAt: string | null = null
+          for (const candidate of candidates) {
+            if (typeof candidate === 'string' && timestampOf(candidate) > 0) {
+              historyAt = candidate
+              break
+            }
+          }
           return {
             id: screening.id as string,
             createdAt: screening.createdAt as string,
-            status: screening.status_details?.name ?? 'unknown',
+            historyAt,
             clinicianName,
             symptomsSummary: summarizeSymptoms(screening.symptoms?.symptomsData),
           }
         })
+        .sort((a, b) => timestampOf(b.historyAt) - timestampOf(a.historyAt))
       lastGoodRef.current = mapped
       setItems(mapped)
     } catch (e) {
@@ -123,16 +133,16 @@ export function TimelineScreen({ navigation }: Props) {
       ) : null}
 
       {!loading && !error && items.length === 0 ? (
-        <EmptyState title="No history yet" body="Completed screenings will appear in your timeline." />
+        <EmptyState title="No history yet" body="Completed check-ins will appear here." />
       ) : null}
 
       {items.length > 0 ? (
         <View style={styles.timelineList}>
           {items.map((item) => {
-            const formattedDate = formatDateLabel(item.createdAt)
+            const formattedDate = formatDateLabel(item.historyAt)
             const metaText = item.clinicianName
-              ? `${item.status} · ${item.clinicianName}`
-              : item.status
+              ? `Completed · ${item.clinicianName}`
+              : 'Completed'
             return (
               <Pressable
                 key={item.id}
@@ -142,7 +152,7 @@ export function TimelineScreen({ navigation }: Props) {
                 accessibilityLabel={`Open screening from ${formattedDate}`}
               >
                 <View style={styles.rowInner}>
-                  <View style={[luminaStyles.statusDot, toneDotStyle(historyTone(item.status))]} />
+                  <View style={[luminaStyles.statusDot, luminaStyles.statusDotReady]} />
                   <View style={styles.rowTextCol}>
                     <Text style={luminaStyles.rowTitleStrong}>{formattedDate}</Text>
                     <Text style={luminaStyles.metaText}>{metaText}</Text>
@@ -180,13 +190,5 @@ const styles = StyleSheet.create({
   chevronCell: {
     alignSelf: 'center',
     marginLeft: 4,
-  },
-  cancelledDot: {
-    backgroundColor: lumina.error,
-    shadowColor: lumina.error,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 2,
   },
 })

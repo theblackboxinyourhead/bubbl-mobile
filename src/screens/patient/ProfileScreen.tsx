@@ -15,13 +15,21 @@ type Props = PatientTabScreenProps<'Profile'> & {
   onSignOut: () => Promise<void> | void
 }
 
+type ConsentDetail = {
+  hasConsent: boolean
+  needsReconsent: boolean
+  acceptedTermsVersion: string | null
+  currentTermsVersion: string | null
+  acceptedAt: string | null
+  acceptedVia: 'web' | 'mobile' | null
+}
+
 type ProfileData = {
   firstName: string
   lastName: string
   email: string
   phone: string
-  consentGranted: boolean
-  submittedMedicalHistory: boolean
+  consent: ConsentDetail
   supportEmail: string | null
   supportPhone: string | null
 }
@@ -62,14 +70,34 @@ export function ProfileScreen({ onSignOut }: Props) {
         typeof profile.email === 'string' ? profile.email : fallback?.email ?? ''
       const phone =
         typeof profile.phone === 'string' ? profile.phone : fallback?.phone ?? ''
-      const submittedMedicalHistory =
-        profileResult.status === 'fulfilled'
-          ? profile.submittedMedicalHistory === true
-          : fallback?.submittedMedicalHistory ?? false
-      const consentGranted =
+      const consent: ConsentDetail =
         consentRaw !== null
-          ? consentRaw.hasConsent === true
-          : fallback?.consentGranted ?? false
+          ? {
+              hasConsent: consentRaw.hasConsent === true,
+              needsReconsent: consentRaw.needsReconsent === true,
+              acceptedTermsVersion:
+                typeof consentRaw.acceptedTermsVersion === 'string'
+                  ? consentRaw.acceptedTermsVersion
+                  : null,
+              currentTermsVersion:
+                typeof consentRaw.currentTermsVersion === 'string'
+                  ? consentRaw.currentTermsVersion
+                  : null,
+              acceptedAt:
+                typeof consentRaw.acceptedAt === 'string' ? consentRaw.acceptedAt : null,
+              acceptedVia:
+                consentRaw.acceptedVia === 'web' || consentRaw.acceptedVia === 'mobile'
+                  ? consentRaw.acceptedVia
+                  : null,
+            }
+          : fallback?.consent ?? {
+              hasConsent: false,
+              needsReconsent: false,
+              acceptedTermsVersion: null,
+              currentTermsVersion: null,
+              acceptedAt: null,
+              acceptedVia: null,
+            }
       const supportEmail =
         authResult.status === 'fulfilled'
           ? authResult.value.supportContact?.email?.trim() || null
@@ -84,8 +112,7 @@ export function ProfileScreen({ onSignOut }: Props) {
         lastName,
         email,
         phone,
-        consentGranted,
-        submittedMedicalHistory,
+        consent,
         supportEmail,
         supportPhone,
       }
@@ -116,7 +143,7 @@ export function ProfileScreen({ onSignOut }: Props) {
 
       {data ? (
         <>
-          <SummarySectionCard title="Profile" icon="person-outline">
+          <SummarySectionCard title="Account identity" icon="person-outline">
             <InlineWrapRow label="Name" value={fullName} />
             <InlineWrapRow label="Email" value={data.email} />
             <InlineWrapRow label="Phone" value={formatPhoneForDisplay(data.phone)} />
@@ -130,21 +157,29 @@ export function ProfileScreen({ onSignOut }: Props) {
               label="Consent"
               valueNode={
                 <SummaryBadge
-                  tone={data.consentGranted ? 'badge-green' : 'badge-gray'}
-                  label={data.consentGranted ? 'Granted' : 'Not granted'}
+                  tone={data.consent.hasConsent ? 'badge-green' : 'badge-gray'}
+                  label={data.consent.hasConsent ? 'Granted' : 'Not granted'}
                 />
               }
             />
-            <SummaryDataRow
-              inline
-              label="Medical history"
-              valueNode={
-                <SummaryBadge
-                  tone={data.submittedMedicalHistory ? 'badge-green' : 'badge-gray'}
-                  label={data.submittedMedicalHistory ? 'Submitted' : 'Not submitted'}
-                />
-              }
-            />
+            {data.consent.acceptedTermsVersion ? (
+              <InlineWrapRow label="Accepted terms version" value={data.consent.acceptedTermsVersion} />
+            ) : null}
+            {data.consent.currentTermsVersion ? (
+              <InlineWrapRow label="Current terms version" value={data.consent.currentTermsVersion} />
+            ) : null}
+            {data.consent.acceptedAt ? (
+              <InlineWrapRow label="Accepted on" value={data.consent.acceptedAt} />
+            ) : null}
+            {data.consent.acceptedVia ? (
+              <InlineWrapRow label="Accepted via" value={data.consent.acceptedVia} />
+            ) : null}
+          </SummarySectionCard>
+
+          <SummarySectionCard title="Account actions" icon="log-out-outline">
+            <Pressable style={luminaStyles.primaryButton} onPress={() => void onSignOut()}>
+              <Text style={luminaStyles.primaryButtonText}>Sign out</Text>
+            </Pressable>
           </SummarySectionCard>
 
           <SummarySectionCard title="Support" icon="help-circle-outline">
@@ -154,10 +189,6 @@ export function ProfileScreen({ onSignOut }: Props) {
               <SummaryEmptyState label="No support contacts on file." />
             ) : null}
           </SummarySectionCard>
-
-          <Pressable style={luminaStyles.primaryButton} onPress={() => void onSignOut()}>
-            <Text style={luminaStyles.primaryButtonText}>Sign out</Text>
-          </Pressable>
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>

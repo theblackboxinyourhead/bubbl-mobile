@@ -10,15 +10,26 @@ import { formatDateLabel } from '@/lib/datetime'
 
 type Props = PatientTabScreenProps<'PatientHome'>
 
+type ActiveCheckin = {
+  screeningId: string
+  source: 'invite' | 'self'
+  status: 'sent' | 'in review'
+  clinicName: string | null
+  createdAt: string
+  startedAt: string | null
+  sentAt: string | null
+}
+
 type HomeData = {
-  activeIntake:
-    | {
-        screeningId: string
-        source: 'invite' | 'self'
-      }
-    | null
+  activeCheckins: ActiveCheckin[]
   latestCompletedScreeningId: string | null
   latestCompletedDateLabel: string | null
+}
+
+function timestampOf(value: string | null | undefined): number {
+  if (typeof value !== 'string' || value.length === 0) return 0
+  const parsed = new Date(value).getTime()
+  return Number.isNaN(parsed) ? 0 : parsed
 }
 
 export function PatientHomeScreen({ navigation }: Props) {
@@ -40,30 +51,65 @@ export function PatientHomeScreen({ navigation }: Props) {
         screenings?: {
           id?: string
           createdAt?: string
+          completedAt?: string | null
+          updatedAt?: string | null
           status_details?: { name?: string } | null
         }[]
       }
 
+      const historyTimestampFor = (screening: {
+        createdAt?: string
+        completedAt?: string | null
+        updatedAt?: string | null
+      }): string | null => {
+        const candidates = [screening.completedAt, screening.updatedAt, screening.createdAt]
+        for (const candidate of candidates) {
+          if (typeof candidate === 'string' && timestampOf(candidate) > 0) {
+            return candidate
+          }
+        }
+        return null
+      }
+
       const screenings = Array.isArray(history.screenings) ? history.screenings : []
       const completed = screenings
-        .filter((screening) => screening.status_details?.name === 'completed')
-        .sort((a, b) => {
-          const aTs = new Date(a.createdAt ?? '').getTime()
-          const bTs = new Date(b.createdAt ?? '').getTime()
-          return bTs - aTs
+        .filter(
+          (screening) =>
+            typeof screening.id === 'string' && typeof screening.createdAt === 'string'
+        )
+        .filter((screening) => {
+          const name = screening.status_details?.name
+          return typeof name === 'string' && name.trim().toLowerCase() === 'completed'
         })
-      const latestCompleted = completed.find((screening) => typeof screening.id === 'string')
-      const active = me.activeScreenings?.[0]
+        .map((screening) => ({
+          screening,
+          historyAt: historyTimestampFor(screening),
+        }))
+        .sort((a, b) => timestampOf(b.historyAt) - timestampOf(a.historyAt))
+      const latestCompleted = completed[0]
+
+      const activeCheckins: ActiveCheckin[] = (me.activeScreenings ?? [])
+        .map((row) => ({
+          screeningId: row.screeningId,
+          source: row.source,
+          status: row.status,
+          clinicName: row.clinicName ?? null,
+          createdAt: row.createdAt,
+          startedAt: row.startedAt ?? null,
+          sentAt: row.sentAt ?? null,
+        }))
+        .sort(
+          (a, b) =>
+            timestampOf(b.sentAt ?? b.createdAt) - timestampOf(a.sentAt ?? a.createdAt)
+        )
 
       const next: HomeData = {
-        activeIntake:
-          active && (active.status === 'sent' || active.status === 'in review')
-            ? { screeningId: active.screeningId, source: active.source }
-            : null,
-        latestCompletedScreeningId: typeof latestCompleted?.id === 'string' ? latestCompleted.id : null,
+        activeCheckins,
+        latestCompletedScreeningId:
+          typeof latestCompleted?.screening.id === 'string' ? latestCompleted.screening.id : null,
         latestCompletedDateLabel:
-          typeof latestCompleted?.createdAt === 'string'
-            ? formatDateLabel(latestCompleted.createdAt)
+          typeof latestCompleted?.historyAt === 'string'
+            ? formatDateLabel(latestCompleted.historyAt)
             : null,
       }
 
@@ -99,32 +145,72 @@ export function PatientHomeScreen({ navigation }: Props) {
 
       {data ? (
         <>
+          {data.activeCheckins.length > 0 ? (
+            <View style={luminaStyles.sectionFlat}>
+              <Text style={luminaStyles.sectionHeader}>Active check-ins</Text>
+              {data.activeCheckins.map((item) => {
+                const title =
+                  item.source === 'self'
+                    ? 'Self check-in'
+                    : item.clinicName && item.clinicName.trim().length > 0
+                      ? item.clinicName
+                      : 'Check-in request'
+                const isSent = item.status === 'sent'
+                const label = isSent ? 'New' : 'Started'
+                const action = isSent ? 'Start' : 'Resume'
+                const dotStyle = isSent
+                  ? luminaStyles.statusDotAttention
+                  : luminaStyles.statusDotNeutral
+                const subtitleSource = isSent
+                  ? item.sentAt ?? item.createdAt
+                  : item.startedAt ?? item.sentAt ?? item.createdAt
+                const subtitle = `${isSent ? 'Sent' : 'Started'} ${formatDateLabel(subtitleSource)}`
+                return (
+                  <Pressable
+                    key={item.screeningId}
+                    style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
+                    onPress={() =>
+                      navigation.navigate('Intake', {
+                        screeningId: item.screeningId,
+                        source: item.source,
+                      })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`${action} ${title}`}
+                  >
+                    <View style={styles.recentRowInner}>
+                      <View style={[luminaStyles.statusDot, dotStyle]} />
+                      <View style={styles.recentRowTextCol}>
+                        <Text style={luminaStyles.rowTitleStrong}>{title}</Text>
+                        <Text style={luminaStyles.metaText}>
+                          {label} · {subtitle}
+                        </Text>
+                      </View>
+                      <View style={styles.actionCell}>
+                        <Text style={luminaStyles.actionTintedButtonText}>{action}</Text>
+                        <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+                      </View>
+                    </View>
+                  </Pressable>
+                )
+              })}
+            </View>
+          ) : null}
+
           <View style={luminaStyles.sectionFlat}>
-            <Text style={luminaStyles.sectionHeader}>Check-in</Text>
-            <Text style={luminaStyles.metaText}>
-              {data.activeIntake ? 'You have an active intake in progress.' : 'No active intake right now.'}
-            </Text>
+            <Text style={luminaStyles.sectionHeader}>Self check-in</Text>
             <Pressable
-              style={luminaStyles.primaryButton}
-              onPress={() => {
-                if (data.activeIntake) {
-                  navigation.navigate('Intake', {
-                    screeningId: data.activeIntake.screeningId,
-                    source: data.activeIntake.source,
-                  })
-                  return
-                }
-                navigation.navigate('CheckInStart')
-              }}
+              style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => navigation.navigate('CheckInStart')}
+              accessibilityRole="button"
+              accessibilityLabel="Start a self check-in"
             >
-              <Text style={luminaStyles.primaryButtonText}>
-                {data.activeIntake ? 'Resume active intake' : 'Start screening'}
-              </Text>
+              <Text style={luminaStyles.secondaryButtonText}>Start self check-in</Text>
             </Pressable>
           </View>
 
           <View style={luminaStyles.sectionFlat}>
-            <Text style={luminaStyles.sectionHeader}>Recent screening</Text>
+            <Text style={luminaStyles.sectionHeader}>Latest result</Text>
             {data.latestCompletedScreeningId ? (
               <Pressable
                 style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
@@ -147,7 +233,7 @@ export function PatientHomeScreen({ navigation }: Props) {
                 </View>
               </Pressable>
             ) : (
-              <EmptyState title="No history yet" body="Completed screenings will appear here." />
+              <EmptyState title="No completed screenings yet" body="Your completed check-ins will show up here." />
             )}
           </View>
         </>
@@ -168,5 +254,10 @@ const styles = StyleSheet.create({
   chevronCell: {
     alignSelf: 'center',
     marginLeft: 4,
+  },
+  actionCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
 })

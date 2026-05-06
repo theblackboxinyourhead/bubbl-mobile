@@ -3,7 +3,6 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { createSelfScreening } from '@/api/screenings'
-import { fetchAuthMe } from '@/api/auth'
 import { ApiError } from '@/lib/apiClient'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
@@ -12,7 +11,6 @@ type Props = NativeStackScreenProps<PatientStackParamList, 'CheckInStart'>
 type EntryMode =
   | { state: 'loading' }
   | { state: 'error'; message: string }
-  | { state: 'resume'; screeningId: string; source: 'invite' | 'self' }
   | { state: 'start' }
 
 export function CheckInStartScreen({ navigation }: Props) {
@@ -22,25 +20,7 @@ export function CheckInStartScreen({ navigation }: Props) {
 
   const resolveEntryMode = useCallback(async () => {
     setActionError(null)
-    setEntryMode({ state: 'loading' })
-    try {
-      const me = await fetchAuthMe()
-      const active = me.activeScreenings?.[0]
-      if (active && (active.status === 'sent' || active.status === 'in review')) {
-        setEntryMode({
-          state: 'resume',
-          screeningId: active.screeningId,
-          source: active.source,
-        })
-      } else {
-        setEntryMode({ state: 'start' })
-      }
-    } catch (e) {
-      setEntryMode({
-        state: 'error',
-        message: e instanceof Error ? e.message : 'Could not resolve your check-in state.',
-      })
-    }
+    setEntryMode({ state: 'start' })
   }, [])
 
   useEffect(() => {
@@ -52,13 +32,6 @@ export function CheckInStartScreen({ navigation }: Props) {
     setBusy(true)
     setActionError(null)
     try {
-      if (entryMode.state === 'resume') {
-        navigation.replace('Intake', {
-          screeningId: entryMode.screeningId,
-          source: entryMode.source,
-        })
-        return
-      }
       if (entryMode.state !== 'start') {
         return
       }
@@ -82,12 +55,7 @@ export function CheckInStartScreen({ navigation }: Props) {
     }
   }
 
-  const primaryLabel =
-    entryMode.state === 'resume'
-      ? 'Resume'
-      : entryMode.state === 'start'
-        ? 'Start screening'
-        : 'Continue'
+  const primaryLabel = entryMode.state === 'start' ? 'Start screening' : 'Continue'
 
   return (
     <View style={styles.screen}>
@@ -116,11 +84,8 @@ export function CheckInStartScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        {entryMode.state === 'resume' ? (
-          <Text style={styles.stateText}>Active screening found. You can resume where you left off.</Text>
-        ) : null}
         {entryMode.state === 'start' ? (
-          <Text style={styles.stateText}>No active screening was found. Start a new screening now.</Text>
+          <Text style={styles.stateText}>Start a new self check-in.</Text>
         ) : null}
         {actionError ? <Text style={luminaStyles.errorText}>{actionError}</Text> : null}
 

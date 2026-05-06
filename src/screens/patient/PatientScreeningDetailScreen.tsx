@@ -51,12 +51,12 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
   const cardTitle = isCompleted ? 'Check-in complete' : 'Check-in in progress'
   const cardBody = isCompleted
     ? "Your clinic has received your check-in. There's nothing else you need to do right now."
-    : "Your clinic will follow up if more information is needed. There's nothing you need to do right now."
+    : 'This check-in has not been completed yet.'
 
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
       <View style={luminaStyles.stage}>
-        <Text style={styles.subtitle}>Check-in status and follow-through.</Text>
+        <Text style={styles.subtitle}>Check-in status</Text>
 
         {loading ? <LoadingState label="Loading check-in status..." /> : null}
         {error ? <ErrorState body={error} onRetry={() => void loadDetail()} /> : null}

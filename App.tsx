@@ -287,13 +287,13 @@ export default function App() {
           await reconcileReminderMetadata(me.user.id).catch(() => undefined)
           const ctx = await loadActiveScreeningContext(me.user.id)
           if (ctx?.screeningId) {
-            const active = me.activeScreenings?.[0]
-            const serverMatchesPersisted =
-              active != null &&
-              active.screeningId === ctx.screeningId &&
-              (active.status === 'sent' || active.status === 'in review')
+            const matched = (me.activeScreenings ?? []).find(
+              (s) =>
+                s.screeningId === ctx.screeningId &&
+                (s.status === 'sent' || s.status === 'in review')
+            )
 
-            if (!serverMatchesPersisted) {
+            if (!matched) {
               console.warn('[mobile auth] clearing stale active screening context', { screeningId: ctx.screeningId })
               await saveActiveScreeningContext(me.user.id, null)
             } else {
@@ -302,7 +302,7 @@ export default function App() {
                 if (s.status === 'sent' || s.status === 'in review') {
                   if (__DEV__) console.log('[mobile auth] navigation target: PatientTabs (pending intake)')
                   setPatientInitial('PatientTabs')
-                  pendingNav.current = { route: 'intake', screeningId: ctx.screeningId, source: ctx.source }
+                  pendingNav.current = { route: 'intake', screeningId: ctx.screeningId, source: matched.source }
                   setAuthFlushTick(t => t + 1)
                   setReady(true)
                   return
@@ -510,7 +510,7 @@ export default function App() {
     if (!p || !navigationRef.isReady()) return
     const navRoutes = navigationRef.getState()?.routes ?? []
     if (
-      (p.route === 'patientHome' || p.route === 'patientPhoneVerification' || p.route === 'intake') &&
+      (p.route === 'patientHome' || p.route === 'patientPhoneVerification' || p.route === 'intake' || p.route === 'checkin') &&
       !navRoutes.some(r => r.name === 'Patient')
     ) return
     if (
@@ -528,11 +528,21 @@ export default function App() {
       void (async () => {
         try {
           const me = await fetchAuthMe()
-          const active = me.activeScreenings?.[0]
-          if (active && (active.status === 'sent' || active.status === 'in review')) {
+          const actives = (me.activeScreenings ?? []).filter(
+            (s) => s.status === 'sent' || s.status === 'in review'
+          )
+          if (actives.length === 1) {
+            const only = actives[0]
             navigationRef.navigate('Patient', {
               screen: 'Intake',
-              params: { screeningId: active.screeningId, source: active.source },
+              params: { screeningId: only.screeningId, source: only.source },
+            })
+            return
+          }
+          if (actives.length > 1) {
+            navigationRef.navigate('Patient', {
+              screen: 'PatientTabs',
+              params: { screen: 'PatientHome' },
             })
             return
           }

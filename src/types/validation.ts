@@ -29,9 +29,12 @@ export const AuthMeResponseSchema = z.object({
     .array(
       z.object({
         screeningId: z.string().uuid(),
-        status: z.string(),
+        status: z.enum(['sent', 'in review']),
         source: z.enum(['invite', 'self']),
         createdAt: z.string(),
+        startedAt: z.string().nullable().optional(),
+        sentAt: z.string().nullable().optional(),
+        clinicName: z.string().nullable().optional(),
       })
     )
     .optional(),
