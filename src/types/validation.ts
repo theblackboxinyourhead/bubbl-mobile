@@ -104,54 +104,13 @@ const SymptomEntrySchema = z
   })
   .passthrough()
 
-const DiagnosisSchema = z
-  .object({
-    condition: z.string().optional(),
-    confidence: z.number().optional(),
-  })
-  .passthrough()
-
-const PreliminaryAssessmentSchema = z
-  .object({
-    summary: z.string().optional(),
-    diagnoses: z.array(DiagnosisSchema).optional(),
-  })
-  .passthrough()
-
-const ClinicalInsightTimelineEntrySchema = z
-  .object({
-    label: z.string().optional(),
-    summary: z.string().optional(),
-  })
-  .passthrough()
-
-const ClinicalInsightsSchema = z
-  .object({
-    timeline: z.array(ClinicalInsightTimelineEntrySchema).optional(),
-  })
-  .passthrough()
-
-const Stage2DataSchema = z
-  .object({
-    pendingReason: z.string().optional(),
-    summary: z.string().optional(),
-  })
-  .passthrough()
-
-export const PatientScreeningDetailSchema = z
-  .object({
-    id: z.string().optional(),
-    status: z.string().nullable().optional(),
-    resumeState: ResumeStateSchema.optional(),
-    medicalHistory: MedicalHistorySchema.nullable().optional(),
-    symptoms: z.array(SymptomEntrySchema).nullable().optional(),
-    preliminaryAssessment: PreliminaryAssessmentSchema.nullable().optional(),
-    screeningSummary: z.string().nullable().optional(),
-    visitSummary: z.string().nullable().optional(),
-    scribeRecordClinicalInsights: ClinicalInsightsSchema.nullable().optional(),
-    stage2Data: Stage2DataSchema.nullable().optional(),
-  })
-  .passthrough()
+export const PatientScreeningDetailSchema = z.object({
+  id: z.string().optional(),
+  status: z.string().nullable().optional(),
+  resumeState: ResumeStateSchema.optional(),
+  medicalHistory: MedicalHistorySchema.nullable().optional(),
+  symptoms: z.array(SymptomEntrySchema).nullable().optional(),
+})
 
 export type PatientScreeningDetail = z.infer<typeof PatientScreeningDetailSchema>
 

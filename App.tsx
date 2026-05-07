@@ -48,6 +48,8 @@ import { lumina } from '@/screens/shared/lumina'
 import type { PatientStackParamList, ClinicianStackParamList } from '@/navigation/RootNavigator'
 /* eslint-enable import/first */
 
+const INVITE_UUID_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+
 function parseVerifyUrl(url: string): { screeningId: string | null; full: string } {
   const parsed = Linking.parse(url)
   const raw =
@@ -57,6 +59,11 @@ function parseVerifyUrl(url: string): { screeningId: string | null; full: string
         ? parsed.queryParams?.screeningId[0] ?? ''
         : ''
   return { screeningId: raw || null, full: url }
+}
+
+function parseInviteScreeningUuid(value: string | null): string | null {
+  if (!value) return null
+  return value.match(INVITE_UUID_RE)?.[1]?.toLowerCase() ?? null
 }
 
 type LoggedOutPath = 'launchChoice' | 'patientAuth' | 'patientInvite' | 'clinicianAuth'
@@ -388,11 +395,50 @@ export default function App() {
       }
       if (url.includes('screening/verify')) {
         const { screeningId, full } = parseVerifyUrl(url)
-        pendingInviteRef.current = { screeningId, full }
-        skipNextAuthedBootstrapRef.current = true
+        const uuid = parseInviteScreeningUuid(screeningId)
         void (async () => {
           const activeUser = (await supabase.auth.getUser()).data.user
           if (activeUser?.id) {
+            if (!uuid) {
+              pendingInviteRef.current = { screeningId, full }
+              skipNextAuthedBootstrapRef.current = true
+              await supabase.auth.signOut().catch(() => undefined)
+              return
+            }
+
+            let role: 'patient' | 'clinician' | 'admin' | 'staff' | null = null
+            try {
+              const me = await fetchAuthMe()
+              role = me.user.user_type
+            } catch {
+              role = null
+            }
+
+            if (role === 'patient') {
+              try {
+                await fetchScreeningPatient(uuid)
+                if (navigationRef.isReady()) {
+                  navigationRef.navigate('Patient', {
+                    screen: 'Consent',
+                    params: { returnTo: 'intake', screeningId: uuid, source: 'invite' },
+                  })
+                }
+                return
+              } catch (err) {
+                if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.status === 404)) {
+                  pendingInviteRef.current = { screeningId, full }
+                  skipNextAuthedBootstrapRef.current = true
+                  await supabase.auth.signOut().catch(() => undefined)
+                  return
+                }
+                // Transient error: keep current session, leave user where they are
+                return
+              }
+            }
+
+            // Non-patient (or unknown) signed-in role: sign out and route into invite OTP
+            pendingInviteRef.current = { screeningId, full }
+            skipNextAuthedBootstrapRef.current = true
             await supabase.auth.signOut().catch(() => undefined)
             return
           }
@@ -400,7 +446,6 @@ export default function App() {
           if (screeningId) {
             navigateInviteOrFallback(screeningId, full)
           }
-          pendingInviteRef.current = null
         })()
         return
       }
@@ -477,8 +522,6 @@ export default function App() {
     void (async () => {
       const initialUrl = await Linking.getInitialURL()
       if (initialUrl?.includes('screening/verify')) {
-        loggedOutPathRef.current = 'patientInvite'
-        skipNextAuthedBootstrapRef.current = true
         queuedUrlRef.current = initialUrl
       } else if (
         initialUrl?.includes('/auth/callback/') ||
