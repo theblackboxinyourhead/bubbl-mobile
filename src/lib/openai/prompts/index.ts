@@ -51,7 +51,7 @@ export const MEDICAL_HISTORY_RETURN_VISIT = "Welcome back. I have your medical h
 export const SYMPTOMS_STANDARD = "Can you describe any health concerns or symptoms you're experiencing right now?";
 
 /** Symptoms: Return visit (has baseline context) */
-export const SYMPTOMS_RETURN_VISIT = "Let's review how you've been feeling since your last visit. Are any of the symptoms from last visit still happening, or are they all completely gone?";
+export const SYMPTOMS_RETURN_VISIT = "Let's review how you've been feeling since your last visit. Are any of the symptoms from last visit still happening, or are they all completely gone? If some are still happening, please tell me which ones.";
 
 /** Conclusion: Standard closing */
 export const CONCLUSION_STANDARD = "Thanks for your time. Your information will be reviewed by your clinician.";
