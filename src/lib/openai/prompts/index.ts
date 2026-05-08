@@ -125,18 +125,20 @@ export function getSystemPromptForStage(stage: Stage, baselineContext?: Baseline
           "ClinicianSignals are question drivers, not truth. " +
           "When given a stage-entry 'Say this exactly ...' instruction, output ONLY that single sentence for the stage-entry turn (no extra sentences). Ask baseline-driven confirmation questions starting on the next turn after the patient responds. " +
           "Start with this presence gate: ask whether any prior symptoms are still happening or all are completely gone. " +
-          "If all are gone, ask one explicit blanket confirmation question (for example: Just to confirm, everything from last time is completely gone now?) before asking what is new today. " +
+          "After the return-visit spoken line, do not ask a second blanket confirmation; if the patient clearly says all prior symptoms are gone, treat them as resolved and ask what is new today. " +
           "If some remain, run symptom-specific confirmations in small batches and keep each answer tied to the symptom phrase. " +
           "If BASELINE_CONTEXT_META indicates truncation or omitted items, add a catch-all confirmation for any other prior symptoms not yet discussed. " +
           "Presence must be established before trend. When deciding whether a baseline symptom is gone vs still happening and the patient uses ambiguous resolution-like language (for example better/improved/mostly better/almost gone/not much), ask ONE clarifier: do you mean it's completely gone, or still happening but better? " +
           "If the patient confirms gone/no longer/not anymore, treat as resolved. If they confirm still happening, treat as persistent. " +
           "Only after a symptom is confirmed still happening, ask the trend follow-up for that symptom: better, worse, or about the same. " +
-          "Collect onset, duration, severity, location, quality, and associated factors for current symptoms.";
+          "Collect onset, duration, severity, location, quality, and associated factors for current symptoms. " +
+          `Hard rule for symptoms turns: do not use "Just to confirm" after the prior-symptom gate, do not restate or yes/no-confirm details already provided, and ask exactly one new missing detail per turn. Only ask a targeted clarification when patient-provided facts for the same symptom truly conflict; after one clarification, move on.`;
       } else {
         symptomsInstructions +=
           "When given a stage-entry 'Say this exactly ...' instruction, output ONLY that single sentence for the stage-entry turn (no extra sentences). " +
           "Only discuss current symptoms and what brings the patient in today. " +
-          "Ask a few brief follow-ups about onset, duration, severity, location, triggers, relieving factors.";
+          "Ask a few brief follow-ups about onset, duration, severity, location, triggers, relieving factors. " +
+          `Hard rule for symptoms turns: do not use "Just to confirm" after the prior-symptom gate, do not restate or yes/no-confirm details already provided, and ask exactly one new missing detail per turn. Only ask a targeted clarification when patient-provided facts for the same symptom truly conflict; after one clarification, move on.`;
       }
 
       const symptomsBaseline = buildBaselineBlockForStage({ stage: Stage.Symptoms, baselineContext }).block;

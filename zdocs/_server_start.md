@@ -30,7 +30,7 @@ Terminal 2
 open -a Simulator; xcrun simctl boot 34EBDEB9-CBCD-4CE4-B77F-B10006D95126 || true; xcrun simctl bootstatus 34EBDEB9-CBCD-4CE4-B77F-B10006D95126 -b; xcrun simctl openurl 34EBDEB9-CBCD-4CE4-B77F-B10006D95126 "exp+bubbl-mobile://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
 ```
 
-Reset / clean restart
+Killer.
 ```bash
 lsof -tiTCP:3000,8081 -sTCP:LISTEN | xargs -r kill -9; xcrun simctl shutdown 34EBDEB9-CBCD-4CE4-B77F-B10006D95126 || true
 ```
