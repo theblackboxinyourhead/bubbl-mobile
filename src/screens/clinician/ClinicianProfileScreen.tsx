@@ -195,7 +195,7 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
         </>
       ) : null}
 
-      <Pressable style={luminaStyles.primaryButton} onPress={() => void onSignOut()}>
+      <Pressable testID="sign-out-button" style={luminaStyles.primaryButton} onPress={() => void onSignOut()}>
         <Text style={luminaStyles.primaryButtonText}>Sign out</Text>
       </Pressable>
 

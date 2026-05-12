@@ -1,0 +1,28 @@
+appId: com.bubbl.mobile.dev
+---
+## Patient session restore and profile sign out.
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-patient-button
+- tapOn:
+    id: patient-auth-identifier-input
+- inputText: ${USER_EMAIL}
+- tapOn:
+    id: patient-auth-password-input
+- inputText: ${USER_PASSWORD}
+- tapOn:
+    id: patient-auth-continue-button
+- assertVisible:
+    text: Home
+- launchApp:
+    clearState: false
+- assertVisible:
+    text: Home
+- tapOn:
+    id: tab-patient-profile
+- tapOn:
+    id: sign-out-button
+- assertVisible:
+    text: Welcome to Bubbl

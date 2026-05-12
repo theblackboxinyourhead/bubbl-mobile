@@ -237,6 +237,7 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
       <PatientTab.Screen
         name="Profile"
         options={{
+          tabBarTestID: 'tab-patient-profile',
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Profile</Text>
           ),
@@ -299,6 +300,7 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
         name="IntakeQueue"
         component={IntakeQueueScreen}
         options={{
+          tabBarTestID: 'tab-clinician-intake',
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Screenings</Text>
           ),
@@ -318,6 +320,7 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
       <ClinicianTab.Screen
         name="ClinicianProfile"
         options={{
+          tabBarTestID: 'tab-clinician-profile',
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Profile</Text>
           ),

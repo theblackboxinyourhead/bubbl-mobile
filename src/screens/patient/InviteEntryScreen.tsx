@@ -51,6 +51,7 @@ export function InviteEntryScreen({ navigation, route }: Props) {
 
         {!fromLink ? (
           <TextInput
+            testID="patient-invite-id-input"
             value={manual}
             onChangeText={setManual}
             placeholder="Screening ID from your link"
@@ -62,6 +63,7 @@ export function InviteEntryScreen({ navigation, route }: Props) {
 
         {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
         <Pressable
+          testID="patient-invite-send-code-button"
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,

@@ -11,7 +11,13 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e:mobile": "set -a; [ -f .env.local ] && . ./.env.local; set +a; NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/smoke && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/patient-invite.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/patient-checkin-start.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/patient-session-restore.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/clinician-intake-queue.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/clinician-patients.yaml",
+    "test:e2e:mobile:smoke": "set -a; [ -f .env.local ] && . ./.env.local; set +a; NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/smoke",
+    "test:ci:pr": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run typecheck && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run lint",
+    "test:ci:mobile": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run typecheck && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run lint && npm run e2e:doctor && npm run test:e2e:mobile:smoke",
+    "e2e:doctor": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local bash scripts/e2e-doctor.sh mobile",
+    "e2e:inventory": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local bash scripts/generate-e2e-inventory.sh mobile"
   },
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^9.0.0",

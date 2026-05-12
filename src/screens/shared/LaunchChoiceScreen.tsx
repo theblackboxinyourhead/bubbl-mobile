@@ -13,10 +13,10 @@ export function LaunchChoiceScreen({ onContinueAsPatient, onClinicianSignIn }: P
         <Text style={styles.title}>Welcome to Bubbl</Text>
         <Text style={styles.body}>Choose your role to continue.</Text>
 
-        <Pressable style={luminaStyles.primaryButton} onPress={onClinicianSignIn}>
+        <Pressable testID="launch-clinician-button" style={luminaStyles.primaryButton} onPress={onClinicianSignIn}>
           <Text style={luminaStyles.primaryButtonText}>Clinician</Text>
         </Pressable>
-        <Pressable style={luminaStyles.secondaryButton} onPress={onContinueAsPatient}>
+        <Pressable testID="launch-patient-button" style={luminaStyles.secondaryButton} onPress={onContinueAsPatient}>
           <Text style={luminaStyles.secondaryButtonText}>Patient</Text>
         </Pressable>
       </View>

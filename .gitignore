@@ -10,3 +10,9 @@ build/
 .env
 .env.*
 !.env.example
+!.env.e2e.example
+
+# zdocs scratch artifacts (agent tooling)
+zdocs/add-tests.md
+zdocs/mobilLogging.md
+zdocs/fix-*.md

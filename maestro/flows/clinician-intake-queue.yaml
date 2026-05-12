@@ -1,0 +1,24 @@
+appId: com.bubbl.mobile.dev
+---
+## Clinician intake queue route load and search controls.
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-clinician-button
+- tapOn:
+    id: clinician-login-email-input
+- inputText: ${CLINICIAN_EMAIL}
+- tapOn:
+    id: clinician-login-password-input
+- inputText: ${CLINICIAN_PASSWORD}
+- tapOn:
+    id: clinician-login-submit-button
+- assertVisible:
+    text: Today
+- tapOn:
+    id: tab-clinician-intake
+- assertVisible:
+    id: clinician-intake-search-input
+- assertVisible:
+    text: Search by patient, phone, or status

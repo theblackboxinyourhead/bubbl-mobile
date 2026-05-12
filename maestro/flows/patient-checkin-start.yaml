@@ -1,0 +1,24 @@
+appId: com.bubbl.mobile.dev
+---
+## Patient self check-in entry route.
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-patient-button
+- tapOn:
+    id: patient-auth-identifier-input
+- inputText: ${USER_EMAIL}
+- tapOn:
+    id: patient-auth-password-input
+- inputText: ${USER_PASSWORD}
+- tapOn:
+    id: patient-auth-continue-button
+- assertVisible:
+    text: Home
+- tapOn:
+    text: Start self check-in
+- assertVisible:
+    text: Check-in
+- assertVisible:
+    text: Start screening

@@ -1,0 +1,22 @@
+appId: com.bubbl.mobile.dev
+---
+## Clinician patients roster route load and search controls.
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-clinician-button
+- tapOn:
+    id: clinician-login-email-input
+- inputText: ${CLINICIAN_EMAIL}
+- tapOn:
+    id: clinician-login-password-input
+- inputText: ${CLINICIAN_PASSWORD}
+- tapOn:
+    id: clinician-login-submit-button
+- assertVisible:
+    text: Today
+- tapOn:
+    text: Patients
+- assertVisible:
+    text: Search by name, email, or phone

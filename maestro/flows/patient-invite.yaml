@@ -1,0 +1,16 @@
+appId: com.bubbl.mobile.dev
+---
+## Patient invite entry route (deterministic UI contract only).
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-patient-button
+- tapOn:
+    id: patient-auth-invite-button
+- assertVisible:
+    text: Enter invite ID
+- assertVisible:
+    id: patient-invite-id-input
+- assertVisible:
+    id: patient-invite-send-code-button

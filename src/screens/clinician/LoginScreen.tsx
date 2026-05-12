@@ -155,6 +155,7 @@ export function LoginScreen({
 
           <Text style={luminaStyles.label}>Email</Text>
           <TextInput
+            testID="clinician-login-email-input"
             style={luminaStyles.input}
             autoCapitalize="none"
             keyboardType="email-address"
@@ -165,6 +166,7 @@ export function LoginScreen({
           />
           <Text style={luminaStyles.label}>Password</Text>
           <TextInput
+            testID="clinician-login-password-input"
             style={luminaStyles.input}
             value={password}
             onChangeText={setPassword}
@@ -200,6 +202,7 @@ export function LoginScreen({
           )}
 
           <Pressable
+            testID="clinician-login-submit-button"
             style={[
               luminaStyles.primaryButton,
               loading && luminaStyles.primaryButtonDisabled,

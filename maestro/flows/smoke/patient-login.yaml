@@ -1,0 +1,27 @@
+appId: com.bubbl.mobile.dev
+---
+## Requires a dev client build on simulator.
+## Provide USER_EMAIL / USER_PASSWORD in the Maestro environment.
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-patient-button
+- tapOn:
+    id: patient-auth-identifier-input
+- inputText: ${USER_EMAIL}
+- tapOn:
+    id: patient-auth-password-input
+- inputText: ${USER_PASSWORD}
+- tapOn:
+    id: patient-auth-continue-button
+- assertVisible:
+    text: Home
+- tapOn:
+    id: tab-patient-profile
+- assertVisible:
+    text: Sign out
+- tapOn:
+    id: sign-out-button
+- assertVisible:
+    text: Welcome to Bubbl

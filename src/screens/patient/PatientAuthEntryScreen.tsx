@@ -168,6 +168,7 @@ export function PatientAuthEntryScreen({
 
           <Text style={luminaStyles.label}>Email</Text>
           <TextInput
+            testID="patient-auth-identifier-input"
             style={luminaStyles.input}
             autoCapitalize="none"
             keyboardType="email-address"
@@ -178,6 +179,7 @@ export function PatientAuthEntryScreen({
           />
           <Text style={luminaStyles.label}>Password</Text>
           <TextInput
+            testID="patient-auth-password-input"
             style={luminaStyles.input}
             value={password}
             onChangeText={setPassword}
@@ -217,6 +219,7 @@ export function PatientAuthEntryScreen({
           )}
 
           <Pressable
+            testID="patient-auth-continue-button"
             style={[
               luminaStyles.primaryButton,
               loading && luminaStyles.primaryButtonDisabled,
@@ -232,6 +235,7 @@ export function PatientAuthEntryScreen({
           </Pressable>
 
           <Pressable
+            testID="patient-auth-invite-button"
             style={luminaStyles.secondaryButton}
             onPress={() => navigation.navigate('InviteEntry')}
             disabled={loading}

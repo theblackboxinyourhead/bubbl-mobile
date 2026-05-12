@@ -176,6 +176,7 @@ export function IntakeQueueScreen({ navigation }: Props) {
     () => (
       <>
         <TextInput
+          testID="clinician-intake-search-input"
           style={[luminaStyles.input, searchFocused && luminaStyles.inputFocused]}
           value={search}
           onChangeText={setSearch}
