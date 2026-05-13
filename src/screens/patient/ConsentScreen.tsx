@@ -82,6 +82,7 @@ export function ConsentScreen({ navigation, route }: Props) {
         </Text>
 
         <Pressable
+          testID="patient-consent-accept-toggle"
           style={({ pressed }) => [styles.acceptRow, pressed && luminaStyles.pressedRow]}
           onPress={() => setAccepted((prev) => !prev)}
         >
@@ -91,6 +92,7 @@ export function ConsentScreen({ navigation, route }: Props) {
 
         {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
         <Pressable
+          testID="patient-consent-continue-button"
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,

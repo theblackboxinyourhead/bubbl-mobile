@@ -172,7 +172,11 @@ export function PatientProfileScreen({ route, navigation }: Props) {
   const screeningRows = profile?.screenings ?? []
 
   return (
-    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={styles.wrap}>
+    <ScrollView
+      testID="clinician-patient-profile-root"
+      style={luminaStyles.screenTransparent}
+      contentContainerStyle={styles.wrap}
+    >
       <Text style={styles.subtitle}>Identity, screenings, and visits.</Text>
 
       {loading ? <LoadingState label="Loading patient profile..." /> : null}
@@ -330,6 +334,7 @@ function ScreeningRow({
   const when = formatWhen(item.sentAt)
   return (
     <Pressable
+      testID={`clinician-patient-profile-screening-${item.id}`}
       style={({ pressed }) => [
         styles.row,
         !isLast && styles.rowDivider,

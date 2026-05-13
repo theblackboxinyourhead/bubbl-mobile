@@ -54,7 +54,11 @@ export function PatientScreeningDetailScreen({ route, navigation }: Props) {
     : 'This check-in has not been completed yet.'
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView
+      testID="patient-screening-detail-root"
+      style={luminaStyles.screen}
+      contentContainerStyle={luminaStyles.pageContent}
+    >
       <View style={luminaStyles.stage}>
         <Text style={styles.subtitle}>Check-in status</Text>
 

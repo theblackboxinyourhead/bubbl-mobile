@@ -16,6 +16,7 @@ export function CompleteScreen({ navigation, onSignOut }: Props) {
         <Text style={styles.title}>You&apos;re all set</Text>
         <Text style={styles.body}>Your check-in has been submitted. Your clinic will review it before your visit.</Text>
         <Pressable
+          testID="patient-complete-back-home-button"
           style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
           onPress={async () => {
             const uid = (await supabase.auth.getUser()).data.user?.id

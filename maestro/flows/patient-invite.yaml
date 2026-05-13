@@ -1,7 +1,8 @@
 appId: com.bubbl.mobile.dev
 ---
-## Patient invite entry route (deterministic UI contract only).
-- launchApp
+## Patient invite entry: shell controls, blocked submit, valid screening ID navigates to Verify OTP screen.
+- launchApp:
+    clearState: true
 - assertVisible:
     text: Welcome to Bubbl
 - tapOn:
@@ -14,3 +15,18 @@ appId: com.bubbl.mobile.dev
     id: patient-invite-id-input
 - assertVisible:
     id: patient-invite-send-code-button
+- tapOn:
+    id: patient-invite-id-input
+- inputText: 00000000-0000-0000-0000-000000000000
+- tapOn:
+    id: patient-invite-send-code-button
+- assertVisible:
+    text: Invite invalid or expired. Contact your clinic.
+- tapOn:
+    id: patient-invite-id-input
+- eraseText
+- inputText: ${E2E_PATIENT_SENT_SCREENING_ID}
+- tapOn:
+    id: patient-invite-send-code-button
+- assertVisible:
+    text: Verify phone

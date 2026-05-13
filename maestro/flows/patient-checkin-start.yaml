@@ -1,7 +1,8 @@
 appId: com.bubbl.mobile.dev
 ---
-## Patient self check-in entry route.
-- launchApp
+## Patient deterministic check-in lifecycle: login, open seeded sent screening, consent, intake, review/confirm, complete.
+- launchApp:
+    clearState: true
 - assertVisible:
     text: Welcome to Bubbl
 - tapOn:
@@ -15,10 +16,38 @@ appId: com.bubbl.mobile.dev
 - tapOn:
     id: patient-auth-continue-button
 - assertVisible:
-    text: Home
+    text: Active check-ins
 - tapOn:
-    text: Start self check-in
+    id: patient-home-active-checkin-${E2E_PATIENT_SENT_SCREENING_ID}
 - assertVisible:
-    text: Check-in
+    text: Before we continue
+- tapOn:
+    id: patient-consent-accept-toggle
+- tapOn:
+    id: patient-consent-continue-button
 - assertVisible:
-    text: Start screening
+    text: Live intake
+- assertVisible:
+    id: patient-intake-submit-history-button
+- tapOn:
+    id: patient-intake-submit-history-button
+- assertVisible:
+    id: patient-intake-finish-screening-button
+- tapOn:
+    id: patient-intake-finish-screening-button
+- assertVisible:
+    text: Ready to submit
+- assertVisible:
+    id: patient-review-submit-checkin-button
+- tapOn:
+    id: patient-review-submit-checkin-button
+- assertVisible:
+    text: You're all set
+- assertVisible:
+    id: patient-complete-back-home-button
+- tapOn:
+    id: patient-complete-back-home-button
+- assertVisible:
+    text: Self check-in
+- assertVisible:
+    text: Latest result

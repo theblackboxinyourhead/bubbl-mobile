@@ -947,7 +947,11 @@ export function ScreeningDetailScreen({ route }: Props) {
   const detailTitle = asString(detail?.patientName) ?? 'Screening workspace'
 
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
+    <ScrollView
+      testID="clinician-screening-detail-root"
+      style={luminaStyles.screen}
+      contentContainerStyle={styles.wrap}
+    >
       <Text style={styles.title}>{detailTitle}</Text>
         <Text style={styles.subtitle}>Summary, scribe, and visit notes.</Text>
 

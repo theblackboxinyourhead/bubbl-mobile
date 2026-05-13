@@ -121,7 +121,7 @@ export interface RealtimeConnection {
   dataChannel: RTCDataChannel
   disconnect: () => void
   sendAudio: (audioChunk: ArrayBuffer) => void
-  manuallyCompleteCurrentStage?: () => void
+  manuallyCompleteCurrentStage?: () => void | Promise<void>
   sendMessage: (message: object) => void
   getStageManager: () => { getStage: () => Stage; setStage: (stage: Stage) => void }
   connectionState?: ConnectionState

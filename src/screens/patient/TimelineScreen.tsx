@@ -146,6 +146,7 @@ export function TimelineScreen({ navigation }: Props) {
             return (
               <Pressable
                 key={item.id}
+                testID={`patient-timeline-row-${item.id}`}
                 style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
                 onPress={() => navigation.navigate('PatientScreeningDetail', { screeningId: item.id })}
                 accessibilityRole="button"

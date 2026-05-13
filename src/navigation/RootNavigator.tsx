@@ -228,6 +228,7 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
         name="Timeline"
         component={TimelineScreen}
         options={{
+          tabBarTestID: 'tab-patient-timeline',
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>History</Text>
           ),
@@ -311,6 +312,7 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
         name="Patients"
         component={PatientsScreen}
         options={{
+          tabBarTestID: 'tab-clinician-patients',
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Patients</Text>
           ),

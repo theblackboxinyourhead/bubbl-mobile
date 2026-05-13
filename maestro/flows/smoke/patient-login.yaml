@@ -2,7 +2,8 @@ appId: com.bubbl.mobile.dev
 ---
 ## Requires a dev client build on simulator.
 ## Provide USER_EMAIL / USER_PASSWORD in the Maestro environment.
-- launchApp
+- launchApp:
+    clearState: true
 - assertVisible:
     text: Welcome to Bubbl
 - tapOn:

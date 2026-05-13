@@ -1,7 +1,8 @@
 appId: com.bubbl.mobile.dev
 ---
-## Patient session restore and profile sign out.
-- launchApp
+## Patient session restore + post-completion latest result detail + sign out.
+- launchApp:
+    clearState: true
 - assertVisible:
     text: Welcome to Bubbl
 - tapOn:
@@ -15,11 +16,31 @@ appId: com.bubbl.mobile.dev
 - tapOn:
     id: patient-auth-continue-button
 - assertVisible:
-    text: Home
+    text: Active check-ins
+- assertVisible:
+    id: patient-home-active-checkin-${E2E_PATIENT_IN_PROGRESS_SCREENING_ID}
 - launchApp:
     clearState: false
 - assertVisible:
-    text: Home
+    text: Active check-ins
+- assertVisible:
+    id: patient-home-active-checkin-${E2E_PATIENT_IN_PROGRESS_SCREENING_ID}
+- assertVisible:
+    id: patient-home-latest-result-row
+- tapOn:
+    id: patient-home-latest-result-row
+- assertVisible:
+    id: patient-screening-detail-root
+- assertVisible:
+    text: Check-in complete
+- tapOn:
+    id: tab-patient-timeline
+- assertVisible:
+    id: patient-timeline-row-${E2E_PATIENT_COMPLETED_SCREENING_ID}
+- tapOn:
+    id: patient-timeline-row-${E2E_PATIENT_COMPLETED_SCREENING_ID}
+- assertVisible:
+    id: patient-screening-detail-root
 - tapOn:
     id: tab-patient-profile
 - tapOn:

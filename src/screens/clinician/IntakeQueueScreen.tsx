@@ -206,6 +206,7 @@ export function IntakeQueueScreen({ navigation }: Props) {
     ({ item: row }) => (
       <View style={styles.queueRow}>
         <Pressable
+          testID={`clinician-intake-row-${row.id}`}
           style={({ pressed }) => [styles.queueRowMain, pressed && luminaStyles.pressedRow]}
           onPress={() => openSummary(row.id)}
           accessibilityRole="button"

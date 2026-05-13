@@ -1,6 +1,7 @@
 appId: com.bubbl.mobile.dev
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - assertVisible:
     text: Welcome to Bubbl
 - tapOn:

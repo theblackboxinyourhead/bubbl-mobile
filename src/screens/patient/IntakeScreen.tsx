@@ -131,7 +131,7 @@ export function IntakeScreen({ route, navigation }: Props) {
         setCurrentPhase('symptoms')
         setPhaseLabel('Live (symptoms)')
         await persistContext('symptoms')
-        connRef.current?.manuallyCompleteCurrentStage?.()
+        await connRef.current?.manuallyCompleteCurrentStage?.()
       } catch (e) {
         setError(mapFinishError(e))
       } finally {
@@ -361,6 +361,7 @@ export function IntakeScreen({ route, navigation }: Props) {
         </View>
 
         <Pressable
+          testID={currentPhase === 'medical-history' ? 'patient-intake-submit-history-button' : 'patient-intake-finish-screening-button'}
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,

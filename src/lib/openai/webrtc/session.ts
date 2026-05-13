@@ -6,6 +6,8 @@ import {
   type RealtimeCallbacks,
   type RealtimeConfig,
   type RealtimeConnection,
+  type RTCDataChannel,
+  type BubblPeerConnection,
   audioConstraints,
   REALTIME_CONFIG,
   isRealtimeEnabled,
@@ -26,6 +28,111 @@ import { getPlainSpokenLineForGuard } from '@/lib/openai/prompts'
 import { waitForOpen } from '@/lib/openai/webrtc/utils'
 import type { BaselineContext } from '@/types/baseline'
 import { shouldSkipMedicalHistory } from '@/lib/screening/shouldSkipMedicalHistory'
+import { isE2EMockRealtimeEnabled } from '@/lib/config'
+
+/**
+ * Local-only deterministic mocked realtime connection used by mobile Maestro
+ * lifecycle flows when `EXPO_PUBLIC_E2E_MOCK_REALTIME=true` is wired through
+ * `mobile/app.config.ts` + `mobile/src/lib/config.ts`. Never active in
+ * production, staging, or smoke. Completion remains driven by the existing
+ * `Submit history` and `Finish screening` buttons in `IntakeScreen.tsx`; the
+ * mock never auto-invokes `onConversationComplete` or `onForceExtractRequired`.
+ */
+async function buildMockRealtimeConnection(
+  screeningId: string,
+  nextStageAfterIntro: Stage,
+  appendTranscript: AppendTranscriptHandler
+): Promise<RealtimeConnection> {
+  const sessionId = uuidv4()
+  const connectionState = createConnectionState(sessionId)
+  // IntakeScreen owns currentPhase independently and skips the Introduction
+  // stage. Start the stage manager at nextStageAfterIntro so the mock's
+  // manuallyCompleteCurrentStage transitions mirror the real flow exactly.
+  const stageManager = createStageManager(nextStageAfterIntro)
+
+  const noopPeer = {
+    connectionState: 'connected',
+    onconnectionstatechange: null,
+    ontrack: null,
+    addTrack: () => null,
+    createDataChannel: () => noopChannel,
+    createOffer: async () => ({ type: 'offer', sdp: 'v=0\r\n' }),
+    setLocalDescription: async () => {},
+    setRemoteDescription: async () => {},
+    close: () => {},
+  } as unknown as BubblPeerConnection
+
+  const noopChannel = {
+    readyState: 'open',
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    close: () => {},
+    send: () => {},
+  } as unknown as RTCDataChannel
+
+  const appendHistoryChunks = async (): Promise<void> => {
+    await appendTranscript(
+      screeningId,
+      { role: 'assistant', content: '[e2e mock] medical history intake prompt.' },
+      'medical-history',
+      sessionId
+    )
+    await appendTranscript(
+      screeningId,
+      { role: 'user', content: '[e2e mock] no significant medical history reported.' },
+      'medical-history',
+      sessionId
+    )
+  }
+
+  const appendSymptomChunks = async (): Promise<void> => {
+    await appendTranscript(
+      screeningId,
+      { role: 'assistant', content: '[e2e mock] symptoms intake prompt.' },
+      'symptoms',
+      sessionId
+    )
+    await appendTranscript(
+      screeningId,
+      { role: 'user', content: '[e2e mock] mild headache for two days.' },
+      'symptoms',
+      sessionId
+    )
+  }
+
+  // Append chunks for the initial phase IntakeScreen will render. For
+  // nextStageAfterIntro === Symptoms (skip-MH case) the symptom chunks must
+  // be present before the user taps Finish screening since there is no
+  // intervening manuallyCompleteCurrentStage call.
+  if (nextStageAfterIntro === Stage.MedicalHistory) {
+    await appendHistoryChunks()
+  } else {
+    await appendSymptomChunks()
+  }
+
+  const manuallyCompleteCurrentStage = async () => {
+    const current = stageManager.getStage()
+    if (current === Stage.MedicalHistory) {
+      stageManager.setStage(Stage.Symptoms)
+      // After Submit history, symptom chunks must exist before the user taps
+      // Finish screening which triggers structureSymptoms.
+      await appendSymptomChunks()
+    }
+  }
+
+  return {
+    peerConnection: noopPeer,
+    dataChannel: noopChannel,
+    manuallyCompleteCurrentStage,
+    connectionState,
+    sendMessage: () => {},
+    getStageManager: () => stageManager,
+    sendAudio: () => {},
+    disconnect: () => {
+      connectionState.intentionalDisconnect = true
+    },
+  }
+}
 
 export async function initializeOpenAIRealtime(
   screeningId: string,
@@ -38,10 +145,6 @@ export async function initializeOpenAIRealtime(
   const sessionId = uuidv4()
   const connectionState = createConnectionState(sessionId)
   startDedupCleanup(connectionState)
-
-  if (!isRealtimeEnabled) {
-    throw new Error('Realtime API is disabled by feature flag')
-  }
 
   const hasSubmittedHistory = config?.hasSubmittedMedicalHistory ?? false
   const requireMedicalHistory = config?.requireMedicalHistory ?? true
@@ -59,6 +162,15 @@ export async function initializeOpenAIRealtime(
       enableVisitContextConfirmUpdate,
     })
     nextStageAfterIntro = skipMedicalHistory ? Stage.Symptoms : Stage.MedicalHistory
+  }
+
+  if (isE2EMockRealtimeEnabled()) {
+    stopDedupCleanup(connectionState)
+    return await buildMockRealtimeConnection(screeningId, nextStageAfterIntro, appendTranscript)
+  }
+
+  if (!isRealtimeEnabled) {
+    throw new Error('Realtime API is disabled by feature flag')
   }
 
   const stageManager = createStageManager(Stage.Introduction)

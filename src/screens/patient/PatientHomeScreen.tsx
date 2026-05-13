@@ -168,6 +168,7 @@ export function PatientHomeScreen({ navigation }: Props) {
                 return (
                   <Pressable
                     key={item.screeningId}
+                    testID={`patient-home-active-checkin-${item.screeningId}`}
                     style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
                     onPress={() =>
                       navigation.navigate('Intake', {
@@ -213,6 +214,7 @@ export function PatientHomeScreen({ navigation }: Props) {
             <Text style={luminaStyles.sectionHeader}>Latest result</Text>
             {data.latestCompletedScreeningId ? (
               <Pressable
+                testID="patient-home-latest-result-row"
                 style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
                 onPress={() => {
                   const id = data.latestCompletedScreeningId

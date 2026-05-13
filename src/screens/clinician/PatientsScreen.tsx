@@ -160,6 +160,7 @@ export function PatientsScreen({ navigation }: Props) {
     () => (
       <>
         <TextInput
+          testID="clinician-patients-search-input"
           style={[luminaStyles.input, searchFocused && luminaStyles.inputFocused]}
           value={search}
           onChangeText={setSearch}
@@ -194,6 +195,7 @@ export function PatientsScreen({ navigation }: Props) {
       return (
         <View style={styles.rosterRow}>
           <Pressable
+            testID={`clinician-patients-row-${row.id}`}
             style={({ pressed }) => [styles.rosterMain, pressed && luminaStyles.pressedRow]}
             onPress={() => navigation.navigate('PatientProfile', { patientId: row.id })}
           >

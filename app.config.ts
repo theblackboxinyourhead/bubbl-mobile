@@ -58,6 +58,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       deepLinkScheme: target.scheme,
       deepLinkHosts: target.hosts,
+      e2eMockRealtime: process.env.EXPO_PUBLIC_E2E_MOCK_REALTIME,
     },
     plugins: [
       [

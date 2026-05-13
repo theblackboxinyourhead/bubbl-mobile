@@ -158,6 +158,7 @@ export function ReviewConfirmScreen({ route, navigation }: Props) {
         {submitError ? <Text style={luminaStyles.errorText}>{submitError}</Text> : null}
 
         <Pressable
+          testID="patient-review-submit-checkin-button"
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,
