@@ -12,8 +12,3 @@ build/
 !.env.example
 !.env.e2e.example
 .e2e.generated.env
-
-# zdocs scratch artifacts (agent tooling)
-zdocs/add-tests.md
-zdocs/mobilLogging.md
-zdocs/fix-*.md
