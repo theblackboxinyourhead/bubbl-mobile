@@ -74,6 +74,9 @@ export const lumina = {
   /** Vibrant emerald used ONLY for shadows under primary buttons. Never used as a text background. */
   primaryGlow: '#10B981',
   statusDotAttention: '#F59E0B',
+  statusDotInProgress: '#2563EB',
+  statusDotError: '#DC2626',
+  statusDotCancelled: '#9CA3AF',
   statusDotReady: '#006B66',
   statusDotNeutral: '#006B66',
 }
@@ -149,6 +152,30 @@ export const luminaStyles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 2,
+  },
+  statusDotInProgress: {
+    backgroundColor: lumina.statusDotInProgress,
+    shadowColor: lumina.statusDotInProgress,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  statusDotError: {
+    backgroundColor: lumina.statusDotError,
+    shadowColor: lumina.statusDotError,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  statusDotCancelled: {
+    backgroundColor: lumina.statusDotCancelled,
+    shadowColor: lumina.statusDotCancelled,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 1,
   },
   statusDotReady: {
     backgroundColor: lumina.statusDotReady,

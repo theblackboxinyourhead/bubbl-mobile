@@ -26,13 +26,8 @@ appId: com.bubbl.mobile.dev
 - inputText: ${E2E_CLINICIAN_PATIENT_NAME}
 - assertVisible:
     id: clinician-intake-row-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
-# Status badge (Completed) + channel badge (Web) + scribe badge visible on the row.
 - assertVisible:
-    text: completed
-- assertVisible:
-    text: Web
-- assertVisible:
-    text: Scribe inProgress
+    text: Scribe in progress
 - tapOn:
     id: clinician-intake-row-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
 - assertVisible:

@@ -9,6 +9,14 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 })
 
+const listTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+})
+
 function parse(iso: string | null | undefined): Date | null {
   if (typeof iso !== 'string') return null
   const trimmed = iso.trim()
@@ -28,4 +36,10 @@ export function formatDateTimeLabel(iso: string | null | undefined): string {
   const date = parse(iso)
   if (!date) return '—'
   return `${dateFormatter.format(date)} · ${timeFormatter.format(date)}`
+}
+
+export function formatListTimestamp(iso: string | null | undefined): string {
+  const date = parse(iso)
+  if (!date) return ''
+  return listTimestampFormatter.format(date)
 }

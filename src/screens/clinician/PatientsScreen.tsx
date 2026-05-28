@@ -3,9 +3,9 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, Vi
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import { listClinicianPatients, type ClinicianPatientRosterItem } from '@/api/clinicians'
 import { sendScreeningInvite } from '@/api/screenings'
+import { formatListTimestamp } from '@/lib/datetime'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
-import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'Patients'>
@@ -20,38 +20,10 @@ const SORT_TABS: readonly SegmentedControlTab<SortMode>[] = [
 
 const PAGE_SIZE = 30
 
-function rosterScreeningTone(screeningStatus: string): 'attention' | 'neutral' | null {
+function rosterScreeningTone(screeningStatus: string): 'attention' | null {
   const s = screeningStatus.trim().toLowerCase()
-  if (s.includes('complete') || s.includes('ready')) return null
   if (s.includes('not sent') || s.includes('not_sent') || s.includes('uninvited')) return 'attention'
-  return 'neutral'
-}
-
-function toneDotStyle(tone: 'attention' | 'neutral') {
-  if (tone === 'attention') return luminaStyles.statusDotAttention
-  return styles.statusDotMuted
-}
-
-function statusTone(raw: string): SummaryBadgeTone {
-  const s = raw.trim().toLowerCase()
-  if (s.includes('complete') || s.includes('ready')) return 'badge-green'
-  if (s.includes('sent')) return 'badge-gray'
-  if (s.includes('pending') || s.includes('review')) return 'badge-blue'
-  if (s.includes('error')) return 'badge-red'
-  return 'neutral'
-}
-
-function formatRelative(value: string | null): string {
-  if (!value) return 'Never'
-  const time = new Date(value).getTime()
-  if (Number.isNaN(time)) return 'Never'
-  const ms = Math.max(0, Date.now() - time)
-  const m = Math.max(1, Math.round(ms / 60000))
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.round(h / 24)
-  return `${d}d ago`
+  return null
 }
 
 export function PatientsScreen({ navigation }: Props) {
@@ -67,6 +39,17 @@ export function PatientsScreen({ navigation }: Props) {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const requestSeq = useRef(0)
+  const sentAtOverrideByPatientIdRef = useRef(new Map<string, string>())
+
+  const applySentAtOverrides = useCallback((items: ClinicianPatientRosterItem[]) => {
+    const overrides = sentAtOverrideByPatientIdRef.current
+    if (overrides.size === 0) return items
+    return items.map((row) => {
+      const sentAt = overrides.get(row.id)
+      if (!sentAt) return row
+      return { ...row, lastScreeningRequest: sentAt, screeningStatus: 'sent' }
+    })
+  }, [])
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -89,7 +72,7 @@ export function PatientsScreen({ navigation }: Props) {
         sort: sortMode,
       })
       if (seq !== requestSeq.current) return
-      setRows(response.items)
+      setRows(applySentAtOverrides(response.items))
       setNextOffset(response.nextOffset)
       setHasMore(response.hasMore)
     } catch (e) {
@@ -103,7 +86,7 @@ export function PatientsScreen({ navigation }: Props) {
         setLoading(false)
       }
     }
-  }, [debouncedSearch, sortMode])
+  }, [applySentAtOverrides, debouncedSearch, sortMode])
 
   const loadMore = useCallback(async () => {
     if (loading || loadingMore || error || !hasMore || nextOffset == null) return
@@ -119,7 +102,7 @@ export function PatientsScreen({ navigation }: Props) {
         sort: sortMode,
       })
       if (seq !== requestSeq.current) return
-      setRows((prev) => [...prev, ...response.items])
+      setRows((prev) => [...prev, ...applySentAtOverrides(response.items)])
       setNextOffset(response.nextOffset)
       setHasMore(response.hasMore)
     } catch (e) {
@@ -130,7 +113,7 @@ export function PatientsScreen({ navigation }: Props) {
         setLoadingMore(false)
       }
     }
-  }, [loading, loadingMore, error, hasMore, nextOffset, debouncedSearch, sortMode])
+  }, [applySentAtOverrides, loading, loadingMore, error, hasMore, nextOffset, debouncedSearch, sortMode])
 
   useEffect(() => {
     void loadReset()
@@ -143,10 +126,17 @@ export function PatientsScreen({ navigation }: Props) {
       const result = await sendScreeningInvite({ patientId })
       if (result.success) {
         setActionMessage('Screening invite sent.')
+        sentAtOverrideByPatientIdRef.current.set(patientId, result.sentAt)
+        setRows((prev) =>
+          prev.map((row) =>
+            row.id === patientId
+              ? { ...row, lastScreeningRequest: result.sentAt, screeningStatus: 'sent' }
+              : row
+          )
+        )
       } else {
         setActionMessage(result.error ?? 'Invite could not be sent.')
       }
-      await loadReset()
     } catch (e) {
       setActionMessage(e instanceof Error ? e.message : 'Invite could not be sent.')
     } finally {
@@ -188,44 +178,32 @@ export function PatientsScreen({ navigation }: Props) {
 
   const renderItem = useCallback<ListRenderItem<ClinicianPatientRosterItem>>(
     ({ item: row }) => {
-      const dotTone = rosterScreeningTone(row.screeningStatus)
-      const hasLastScreeningRequest = row.lastScreeningRequest
-        ? !Number.isNaN(new Date(row.lastScreeningRequest).getTime())
-        : false
+      const sentLabel = formatListTimestamp(row.lastScreeningRequest)
+      const isNeverSent = rosterScreeningTone(row.screeningStatus) === 'attention' && !sentLabel
+      const showSentMeta = Boolean(sentLabel)
       return (
         <View style={styles.rosterRow}>
           <Pressable
             testID={`clinician-patients-row-${row.id}`}
-            style={({ pressed }) => [styles.rosterMain, pressed && luminaStyles.pressedRow]}
+            style={({ pressed }) => [
+              styles.rosterMain,
+              !showSentMeta && styles.rosterMainCentered,
+              pressed && luminaStyles.pressedRow,
+            ]}
             onPress={() => navigation.navigate('PatientProfile', { patientId: row.id })}
           >
             <View style={styles.rosterMainInner}>
-              {dotTone ? (
-                <View style={[luminaStyles.statusDot, toneDotStyle(dotTone)]} />
-              ) : null}
+              <View
+                style={[
+                  luminaStyles.statusDot,
+                  isNeverSent ? luminaStyles.statusDotAttention : styles.statusDotTransparent,
+                ]}
+              />
               <View style={styles.rosterTextCol}>
-                <View style={styles.rosterRowHeader}>
-                  <Text style={luminaStyles.rowTitleStrong}>{row.fullName}</Text>
-                  {row.phone ? (
-                    <Text style={styles.phoneMeta} numberOfLines={1}>
-                      {row.phone}
-                    </Text>
-                  ) : null}
-                </View>
-                {row.email ? (
-                  <Text style={luminaStyles.metaText} numberOfLines={1}>
-                    {row.email}
-                  </Text>
+                <Text style={luminaStyles.rowTitleStrong}>{row.fullName}</Text>
+                {showSentMeta ? (
+                  <Text style={luminaStyles.metaText}>{`Sent ${sentLabel}`}</Text>
                 ) : null}
-                <View style={styles.chipCloud}>
-                  <SummaryBadge tone={statusTone(row.screeningStatus)} label={row.screeningStatus} />
-                  {hasLastScreeningRequest ? (
-                    <SummaryBadge
-                      tone="neutral"
-                      label={formatRelative(row.lastScreeningRequest)}
-                    />
-                  ) : null}
-                </View>
               </View>
             </View>
           </Pressable>
@@ -291,35 +269,23 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: lumina.surfaceLowest,
     overflow: 'hidden',
+    minHeight: 60,
   },
   rosterMain: {
     flex: 1,
     paddingVertical: 8,
     paddingHorizontal: 10,
   },
+  rosterMainCentered: {
+    justifyContent: 'center',
+  },
   rosterMainInner: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   rosterTextCol: {
     flex: 1,
     gap: 3,
-  },
-  rosterRowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  phoneMeta: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 12,
-  },
-  chipCloud: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
   },
   rosterAction: {
     justifyContent: 'center',
@@ -332,7 +298,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  statusDotMuted: {
-    backgroundColor: '#D1D5DB',
+  statusDotTransparent: {
+    backgroundColor: 'transparent',
   },
 })

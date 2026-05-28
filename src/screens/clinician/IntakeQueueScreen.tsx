@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View, type ListRenderItem } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
+import { Feather } from '@expo/vector-icons'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import {
   listScreeningsForClinician,
   type ClinicianScreeningQueueItem,
 } from '@/api/screenings'
+import { formatListTimestamp } from '@/lib/datetime'
 import { handleClinicianDashboardAction } from '@/screens/clinician/dashboardActions'
+import { ScribeStatusOutlinePill } from '@/screens/clinician/components/summary/ScribeStatusOutlinePill'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
-import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'IntakeQueue'>
@@ -26,44 +27,63 @@ const QUEUE_FILTER_TABS: readonly SegmentedControlTab<QueueFilter>[] = [
 
 const PAGE_SIZE = 30
 
-function formatSentAt(value: string | null): string {
-  if (!value) return 'Not sent'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not sent'
-  return date.toLocaleString()
-}
-
 function normalize(value: string): string {
   return value.trim().toLowerCase()
 }
 
-function statusTone(raw: string): SummaryBadgeTone {
-  const s = raw.trim().toLowerCase()
-  if (s === 'completed') return 'badge-green'
-  if (s === 'sent') return 'badge-gray'
-  if (s === 'in review') return 'badge-blue'
-  if (s === 'error') return 'badge-red'
-  if (s === 'cancelled') return 'badge-cancelled'
-  if (s === 'processing') return 'badge-yellow'
-  return 'neutral'
-}
+type QueueDotTone = 'ready' | 'inProgress' | 'attention' | 'error' | 'cancelled'
 
-function typeTone(raw: string | null): SummaryBadgeTone {
-  if (!raw) return 'neutral'
-  return raw.toLowerCase() === 'web' ? 'badge-indigo' : 'badge-teal'
-}
-
-function queueRowTone(status: string): 'attention' | 'ready' | 'neutral' {
+function queueRowTone(status: string): QueueDotTone {
   const s = normalize(status)
   if (s === 'completed') return 'ready'
-  if (s === 'sent' || s === 'in review') return 'attention'
-  return 'neutral'
+  if (s === 'in review') return 'inProgress'
+  if (s === 'in progress') return 'inProgress'
+  if (s === 'cancelled') return 'cancelled'
+  if (s === 'error') return 'error'
+  if (s === 'failed') return 'error'
+  return 'attention'
 }
 
-function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
-  if (tone === 'ready') return luminaStyles.statusDotReady
-  if (tone === 'attention') return luminaStyles.statusDotAttention
-  return luminaStyles.statusDotNeutral
+function toneDotStyle(tone: 'attention' | 'inProgress' | 'cancelled') {
+  if (tone === 'inProgress') return luminaStyles.statusDotInProgress
+  if (tone === 'cancelled') return luminaStyles.statusDotCancelled
+  return luminaStyles.statusDotAttention
+}
+
+function QueueStatusIndicator({ tone }: { tone: QueueDotTone }) {
+  if (tone === 'ready') {
+    return (
+      <View style={styles.queueStatusIndicatorSlot}>
+        <Feather name="check" size={16} color={lumina.statusDotReady} />
+      </View>
+    )
+  }
+  if (tone === 'error') {
+    return (
+      <View style={styles.queueStatusIndicatorSlot}>
+        <Feather name="x" size={16} color={lumina.statusDotError} />
+      </View>
+    )
+  }
+  if (tone === 'cancelled') {
+    return (
+      <View style={styles.queueStatusIndicatorSlot}>
+        <View style={[luminaStyles.statusDot, styles.queueStatusDot, toneDotStyle('cancelled')]} />
+      </View>
+    )
+  }
+  if (tone === 'inProgress') {
+    return (
+      <View style={styles.queueStatusIndicatorSlot}>
+        <View style={[luminaStyles.statusDot, styles.queueStatusDot, toneDotStyle('inProgress')]} />
+      </View>
+    )
+  }
+  return (
+    <View style={styles.queueStatusIndicatorSlot}>
+      <View style={[luminaStyles.statusDot, styles.queueStatusDot, toneDotStyle('attention')]} />
+    </View>
+  )
 }
 
 export function IntakeQueueScreen({ navigation }: Props) {
@@ -203,42 +223,38 @@ export function IntakeQueueScreen({ navigation }: Props) {
   )
 
   const renderItem = useCallback<ListRenderItem<ClinicianScreeningQueueItem>>(
-    ({ item: row }) => (
-      <View style={styles.queueRow}>
-        <Pressable
-          testID={`clinician-intake-row-${row.id}`}
-          style={({ pressed }) => [styles.queueRowMain, pressed && luminaStyles.pressedRow]}
-          onPress={() => openSummary(row.id)}
-          accessibilityRole="button"
-          accessibilityLabel={`Open screening for ${row.patientName}`}
+    ({ item: row }) => {
+      const sentLabel = formatListTimestamp(row.sentAt)
+      return (
+        <View
+          style={[
+            styles.queueRow,
+            { backgroundColor: row.isUnread ? lumina.surfaceDim : lumina.surfaceLowest },
+          ]}
         >
-          <View style={styles.queueRowInner}>
-            <View style={[luminaStyles.statusDot, toneDotStyle(queueRowTone(row.status))]} />
-            <View style={styles.queueTextCol}>
-              <View style={styles.queueRowHeader}>
-                <Text style={luminaStyles.rowTitleStrong}>{row.patientName}</Text>
-                {row.isUnread ? (
-                  <SummaryBadge tone="badge-blue" label="New" />
-                ) : null}
+          <Pressable
+            testID={`clinician-intake-row-${row.id}`}
+            style={({ pressed }) => [styles.queueRowMain, pressed && luminaStyles.pressedRow]}
+            onPress={() => openSummary(row.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open screening for ${row.patientName}`}
+          >
+            <View style={styles.queueRowInner}>
+              <View style={styles.queueRowLeft}>
+                <QueueStatusIndicator tone={queueRowTone(row.status)} />
+                <View style={styles.queueTextCol}>
+                  <Text style={luminaStyles.rowTitleStrong} numberOfLines={1} ellipsizeMode="tail">
+                    {row.patientName}
+                  </Text>
+                  {sentLabel ? <Text style={luminaStyles.metaText}>{sentLabel}</Text> : null}
+                </View>
               </View>
-              <Text style={luminaStyles.metaText}>{formatSentAt(row.sentAt)}</Text>
-              <View style={styles.chipCloud}>
-                <SummaryBadge tone={statusTone(row.status)} label={row.status} />
-                {row.screeningType ? (
-                  <SummaryBadge tone={typeTone(row.screeningType)} label={row.screeningType} />
-                ) : null}
-                {row.scribeStatus ? (
-                  <SummaryBadge tone="neutral" label={`Scribe ${row.scribeStatus}`} />
-                ) : null}
-              </View>
+              <ScribeStatusOutlinePill scribeStatus={row.scribeStatus} />
             </View>
-            <View style={styles.chevronCell}>
-              <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
-            </View>
-          </View>
-        </Pressable>
-      </View>
-    ),
+          </Pressable>
+        </View>
+      )
+    },
     [openSummary]
   )
 
@@ -274,7 +290,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     borderRadius: 10,
-    backgroundColor: lumina.surfaceLowest,
     overflow: 'hidden',
   },
   queueRowMain: {
@@ -284,26 +299,28 @@ const styles = StyleSheet.create({
   },
   queueRowInner: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 8,
+  },
+  queueRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
   },
   queueTextCol: {
     flex: 1,
+    minWidth: 0,
     gap: 3,
   },
-  queueRowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
+  queueStatusIndicatorSlot: {
+    width: 16,
+    minHeight: 16,
+    marginRight: 0,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
-  chipCloud: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
-  },
-  chevronCell: {
-    alignSelf: 'center',
-    marginLeft: 4,
+  queueStatusDot: {
+    marginRight: 0,
   },
 })
