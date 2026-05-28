@@ -22,11 +22,13 @@ import {
   type ScribeInsightsTimelineRow,
   type ScribeSessionResponse,
 } from '@/api/screenings'
+import { Ionicons } from '@expo/vector-icons'
+import * as Haptics from 'expo-haptics'
 import { ApiError } from '@/lib/apiClient'
 import { fetchAuthMe } from '@/api/auth'
 import { EmptyState, ErrorState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { MobileScreeningSummary } from '@/screens/clinician/components/summary/MobileScreeningSummary'
 import { MobileScribeHeroState } from '@/screens/clinician/components/scribe/MobileScribeHeroState'
 import { MobileScribeLivePanel, type LiveScribePhase } from '@/screens/clinician/components/scribe/MobileScribeLivePanel'
@@ -324,6 +326,27 @@ function extractApiErrorMessage(error: unknown): string | null {
 function tabFromRouteParam(tab: 'summary' | 'scribe' | 'notes' | undefined): TabKey {
   if (tab === 'scribe' || tab === 'notes') return tab
   return 'summary'
+}
+
+function scribeHeaderStatusLabel(input: {
+  canScribe: boolean
+  scribe: ScribeUiState
+  isScribeProcessing: boolean
+  isScribeReview: boolean
+  isScribeLive: boolean
+  livePhase: LiveScribePhase
+}): string {
+  const { canScribe, scribe, isScribeProcessing, isScribeReview, isScribeLive, livePhase } = input
+  if (!canScribe) return 'Unavailable'
+  if (isScribeProcessing) return 'Processing'
+  if (scribe === 'failed') return 'Needs attention'
+  if (isScribeReview && scribe === 'generated-review') return 'Summary complete'
+  if (isScribeReview) return 'Review ready'
+  if (isScribeLive && livePhase === 'starting') return 'Starting'
+  if (isScribeLive && livePhase === 'recording') return 'Recording'
+  if (isScribeLive && livePhase === 'paused-locally') return 'Paused'
+  if (isScribeLive) return 'Reconnecting'
+  return 'Ready'
 }
 
 export function ScreeningDetailScreen({ route }: Props) {
@@ -942,6 +965,15 @@ export function ScreeningDetailScreen({ route }: Props) {
       scribe === 'generated-review' ||
       scribe === 'failed')
 
+  const scribeHeaderLabel = scribeHeaderStatusLabel({
+    canScribe,
+    scribe,
+    isScribeProcessing,
+    isScribeReview,
+    isScribeLive,
+    livePhase,
+  })
+
   const transcriptReady = scribeChunkRows.length > 0
 
   const detailTitle = asString(detail?.patientName) ?? 'Screening workspace'
@@ -977,8 +1009,16 @@ export function ScreeningDetailScreen({ route }: Props) {
         ) : null}
 
         {activeTab === 'scribe' ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Scribe session</Text>
+          <View style={[styles.card, styles.scribeCard]}>
+            <View style={styles.scribeHeaderRow}>
+              <View style={styles.scribeHeaderBadge}>
+                <Ionicons name="mic" size={18} color={lumina.onPrimary} />
+              </View>
+              <Text style={styles.scribeHeaderTitle}>Scribe session</Text>
+              <View style={styles.scribeHeaderPill}>
+                <Text style={styles.scribeHeaderPillText}>{scribeHeaderLabel}</Text>
+              </View>
+            </View>
 
             {scribeFlowError ? <Text style={luminaStyles.errorText}>{scribeFlowError}</Text> : null}
 
@@ -1057,7 +1097,8 @@ export function ScreeningDetailScreen({ route }: Props) {
                 timerLabel={formatDuration(recordingElapsedMs)}
                 chunkRows={scribeChunkRows}
                 insightPreviewLines={insightPreviewLines}
-                onStart={onStart}
+                chunkCount={chunkCount}
+                insightCount={timelineCount}
                 onPauseLocal={() => void onPauseLocal()}
                 onResumeLocal={() => void onResumeLocal()}
                 onStopSave={() => void onStop('save')}
@@ -1074,13 +1115,17 @@ export function ScreeningDetailScreen({ route }: Props) {
             {showScribeRefreshFooter ? (
               <Pressable
                 style={({ pressed }) => [
-                  luminaStyles.actionTintedButton,
+                  luminaStyles.secondaryButton,
+                  styles.scribeRefreshButton,
                   styles.scribeClusterSpacer,
                   pressed && luminaStyles.pressedButton,
                 ]}
-                onPress={() => void runHydrateFromUi()}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  void runHydrateFromUi()
+                }}
               >
-                <Text style={luminaStyles.actionTintedButtonText}>Refresh session data</Text>
+                <Text style={luminaStyles.secondaryButtonText}>Refresh session data</Text>
               </Pressable>
             ) : null}
           </View>
@@ -1221,6 +1266,43 @@ const styles = StyleSheet.create({
   },
   scribeClusterSpacer: {
     marginTop: 10,
+  },
+  scribeCard: {
+    gap: 12,
+  },
+  scribeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  scribeHeaderBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: lumina.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scribeHeaderTitle: {
+    flex: 1,
+    color: lumina.onSurface,
+    fontFamily: luminaFonts.displaySemi,
+    fontSize: 18,
+  },
+  scribeHeaderPill: {
+    backgroundColor: lumina.secondaryContainer,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  scribeHeaderPillText: {
+    color: lumina.onSecondaryContainer,
+    fontFamily: luminaFonts.bodySemi,
+    fontSize: 12,
+  },
+  scribeRefreshButton: {
+    alignSelf: 'stretch',
+    minHeight: 52,
   },
   rowTitle: {
     color: lumina.onSurface,

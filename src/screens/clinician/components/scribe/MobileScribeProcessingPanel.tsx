@@ -1,5 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { Ionicons } from '@expo/vector-icons'
+import { lumina, luminaFonts } from '@/screens/shared/lumina'
+import { MobileScribeVoiceBars } from '@/screens/clinician/components/scribe/MobileScribeVoiceBars'
 
 type Props = {
   scribeStopping: boolean
@@ -7,6 +9,8 @@ type Props = {
   isGeneratingSummary: boolean
   isGeneratingInsights: boolean
 }
+
+const PROCESSING_BARS = [10, 14, 18, 14, 20, 14, 10] as const
 
 export function MobileScribeProcessingPanel({
   scribeStopping,
@@ -27,11 +31,20 @@ export function MobileScribeProcessingPanel({
     headline = 'Working…'
   }
 
+  const showAnalytics = isGeneratingSummary || isGeneratingInsights
+  const iconName = showAnalytics ? 'analytics' : 'mic'
+
   return (
     <View style={styles.wrap}>
-      <View style={styles.card}>
-        <ActivityIndicator color={lumina.primary} size="large" />
+      <View style={styles.console}>
+        <View style={styles.badgeRow}>
+          <View style={styles.iconBadge}>
+            <Ionicons name={iconName} size={26} color={lumina.onPrimary} />
+          </View>
+          <ActivityIndicator color={lumina.primary} />
+        </View>
         <Text style={styles.headline}>{headline}</Text>
+        <MobileScribeVoiceBars heights={PROCESSING_BARS} barColor={lumina.primary} />
         <Text style={styles.sub}>
           {scribeStopping
             ? 'Uploading audio and closing the scribe session safely.'
@@ -44,22 +57,39 @@ export function MobileScribeProcessingPanel({
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 8,
+    gap: 14,
   },
-  card: {
+  console: {
+    backgroundColor: lumina.surfaceDim,
     borderRadius: 16,
-    backgroundColor: lumina.surface,
     padding: 20,
-    gap: 12,
+    gap: 14,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: lumina.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headline: {
-    ...luminaStyles.rowTitleStrong,
+    color: lumina.onSurface,
+    fontFamily: luminaFonts.displaySemi,
+    fontSize: 18,
     textAlign: 'center',
-    fontSize: 17,
   },
   sub: {
     color: lumina.onSurfaceVariant,
+    fontFamily: luminaFonts.body,
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',

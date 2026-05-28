@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { Ionicons } from '@expo/vector-icons'
+import * as Haptics from 'expo-haptics'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 export type ScribeRecordSummaryForReview = {
   summaryNarrative: string | null
@@ -169,47 +171,87 @@ export function MobileScribeReviewPanel({
   const generationEnabled =
     !generating && !summaryGenerationComplete && (transcriptReady || !!sessionId)
 
+  let headerTitle: string
+  if (summaryGenerationComplete) headerTitle = 'Summary complete'
+  else headerTitle = 'Recording ready'
+
+  let headerStatus: string
+  if (summaryGenerationComplete) headerStatus = 'Summary and insights are ready for review.'
+  else if (transcriptReady) headerStatus = 'Transcript is ready for summary generation.'
+  else if (sessionId) headerStatus = 'Session is saved. Refresh if transcript data is still loading.'
+  else headerStatus = 'Transcript is not available yet.'
+
   return (
     <View style={styles.wrap}>
-      <Pressable
-        style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
-        onPress={onAddToRecording}
-      >
-        <Text style={luminaStyles.primaryButtonText}>Add to Recording</Text>
-      </Pressable>
-
-      <Pressable
-        style={({ pressed }) => [luminaStyles.actionTintedButton, pressed && luminaStyles.pressedButton]}
-        onPress={onOpenVisitWorkspace}
-      >
-        <Text style={luminaStyles.actionTintedButtonText}>Open visit workspace</Text>
-      </Pressable>
+      <View style={styles.completionHeader}>
+        <View style={styles.completionBadge}>
+          <Ionicons name="checkmark-circle" size={24} color={lumina.onPrimary} />
+        </View>
+        <View style={styles.completionTextCol}>
+          <Text style={styles.completionTitle}>{headerTitle}</Text>
+          <Text style={styles.completionStatus}>{headerStatus}</Text>
+        </View>
+      </View>
 
       <ScribeSummarySection data={scribeRecordSummary} />
       <ReviewSection title="Visit summary" body={visitSummaryText} />
       <ClinicalInsightsSection data={clinicalInsights} />
 
-      <View style={styles.genBlock}>
+      <View style={styles.dock}>
+        <Pressable
+          style={({ pressed }) => [
+            luminaStyles.primaryButton,
+            styles.ctaPrimary,
+            pressed && luminaStyles.pressedButton,
+          ]}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+            onAddToRecording()
+          }}
+        >
+          <Ionicons name="mic" size={18} color={lumina.onPrimary} />
+          <Text style={luminaStyles.primaryButtonText}>Add to Recording</Text>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            luminaStyles.secondaryButton,
+            styles.ctaSecondary,
+            pressed && luminaStyles.pressedButton,
+          ]}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+            onOpenVisitWorkspace()
+          }}
+        >
+          <Text style={luminaStyles.secondaryButtonText}>Open visit workspace</Text>
+        </Pressable>
+
         {summaryGenerationComplete ? (
-          <View style={luminaStyles.actionTintedButton}>
-            <Text style={[luminaStyles.actionTintedButtonText, styles.successLabel]}>
+          <View style={[luminaStyles.secondaryButton, styles.ctaSecondary]}>
+            <Text style={[luminaStyles.secondaryButtonText, styles.successLabel]}>
               {generationPrimaryLabel}
             </Text>
           </View>
         ) : (
           <Pressable
             style={({ pressed }) => [
-              luminaStyles.actionTintedButton,
+              luminaStyles.secondaryButton,
+              styles.ctaSecondary,
               !generationEnabled ? styles.disabled : undefined,
               pressed && luminaStyles.pressedButton,
             ]}
-            onPress={onGenerate}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+              onGenerate()
+            }}
             disabled={!generationEnabled}
           >
             {generating ? <ActivityIndicator color={lumina.primary} /> : null}
-            <Text style={luminaStyles.actionTintedButtonText}>{generationPrimaryLabel}</Text>
+            <Text style={luminaStyles.secondaryButtonText}>{generationPrimaryLabel}</Text>
           </Pressable>
         )}
+
         {!transcriptReady && !sessionId ? (
           <Text style={styles.hint}>
             Transcript is not available yet. Refresh session data to re-check.
@@ -222,27 +264,64 @@ export function MobileScribeReviewPanel({
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 12,
+    alignSelf: 'stretch',
+    gap: 14,
+  },
+  completionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: lumina.surfaceDim,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+  },
+  completionBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: lumina.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completionTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  completionTitle: {
+    color: lumina.onSurface,
+    fontFamily: luminaFonts.displaySemi,
+    fontSize: 18,
+  },
+  completionStatus: {
+    color: lumina.onSurfaceVariant,
+    fontFamily: luminaFonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
   section: {
     gap: 6,
     borderRadius: 16,
-    backgroundColor: lumina.surface,
+    backgroundColor: lumina.surfaceDim,
     padding: 12,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
   },
   sectionTitle: {
     color: lumina.onSurface,
+    fontFamily: luminaFonts.bodySemi,
     fontSize: 14,
-    fontWeight: '700',
   },
   subheading: {
     color: lumina.onSurface,
+    fontFamily: luminaFonts.bodySemi,
     fontSize: 13,
-    fontWeight: '600',
     marginTop: 4,
   },
   sectionBody: {
     color: lumina.onSurfaceVariant,
+    fontFamily: luminaFonts.body,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -251,20 +330,44 @@ const styles = StyleSheet.create({
   },
   soapBlock: {
     gap: 4,
+    borderRadius: 16,
+    backgroundColor: lumina.surfaceDim,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
   },
   empty: {
     color: lumina.onSurfaceVariant,
+    fontFamily: luminaFonts.body,
     fontSize: 13,
     fontStyle: 'italic',
   },
-  genBlock: {
-    gap: 8,
+  dock: {
+    alignSelf: 'stretch',
+    gap: 10,
+    padding: 12,
+    backgroundColor: lumina.surfaceDim,
     borderRadius: 16,
-    backgroundColor: lumina.surface,
-    padding: 10,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+  },
+  ctaPrimary: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  ctaSecondary: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   hint: {
     color: lumina.onSurfaceVariant,
+    fontFamily: luminaFonts.body,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -272,6 +375,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   successLabel: {
-    fontWeight: '700',
+    fontFamily: luminaFonts.bodySemi,
   },
 })
