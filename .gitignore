@@ -10,3 +10,5 @@ build/
 .env
 .env.*
 !.env.example
+!.env.e2e.example
+.e2e.generated.env

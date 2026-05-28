@@ -1,0 +1,1323 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, TextInput, AppState } from 'react-native'
+import { Audio } from 'expo-av'
+import { v4 as uuidv4 } from 'uuid'
+import type { NativeStackScreenProps } from '@react-navigation/native-stack'
+import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
+import {
+  fetchScreeningRaw,
+  markScreeningViewed,
+  finalizeScreeningVisit,
+  scribeRecord,
+  scribeStart,
+  scribeStop,
+  scribeSession,
+  scribeChunks,
+  scribeInsights,
+  generateScribeSummary,
+  generateScribeInsights,
+  recoverScribeTranscript,
+  updateVisitNote,
+  type ScribeChunkRow,
+  type ScribeInsightsTimelineRow,
+  type ScribeSessionResponse,
+} from '@/api/screenings'
+import { Ionicons } from '@expo/vector-icons'
+import * as Haptics from 'expo-haptics'
+import { ApiError } from '@/lib/apiClient'
+import { fetchAuthMe } from '@/api/auth'
+import { EmptyState, ErrorState } from '@/screens/shared/ScreenState'
+import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
+import { MobileScreeningSummary } from '@/screens/clinician/components/summary/MobileScreeningSummary'
+import { MobileScribeHeroState } from '@/screens/clinician/components/scribe/MobileScribeHeroState'
+import { MobileScribeLivePanel, type LiveScribePhase } from '@/screens/clinician/components/scribe/MobileScribeLivePanel'
+import { MobileScribeProcessingPanel } from '@/screens/clinician/components/scribe/MobileScribeProcessingPanel'
+import {
+  MobileScribeReviewPanel,
+  type ClinicalInsightsForReview,
+  type ScribeRecordSummaryForReview,
+} from '@/screens/clinician/components/scribe/MobileScribeReviewPanel'
+
+type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianScreeningDetail'>
+
+export type ScribeUiState =
+  | 'idle'
+  | 'starting'
+  | 'recording'
+  | 'paused-locally'
+  | 'reconnecting'
+  | 'stopping'
+  | 'completed'
+  | 'generated-review'
+  | 'failed'
+
+type TabKey = 'summary' | 'scribe' | 'notes'
+
+const WORKSPACE_TABS: readonly SegmentedControlTab<TabKey>[] = [
+  { key: 'summary', label: 'Summary' },
+  { key: 'scribe', label: 'Scribe' },
+  { key: 'notes', label: 'Notes' },
+]
+
+type PendingChunkUpload = {
+  uri: string
+  sequenceNumber: number
+  idempotencyKey: string
+  startedAtMs: number
+}
+
+const CHUNK_ROLLOVER_MS = 15_000
+const INSIGHTS_POLL_MS = 10_000
+
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 400): Promise<T> {
+  let last: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      last = e
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)))
+    }
+  }
+  throw last
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+export function summarizeInsightRecord(insights: Record<string, unknown>): string | null {
+  const preferredKeys = ['label', 'summary', 'title', 'progress', 'note']
+  for (const key of preferredKeys) {
+    const text = asString(insights[key])
+    if (text) return text
+  }
+  for (const value of Object.values(insights)) {
+    const text = asString(value)
+    if (text) return text
+  }
+  return null
+}
+
+function asNonEmptyStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+function parseScribeRecordSummaryForReview(value: unknown): ScribeRecordSummaryForReview {
+  const empty: ScribeRecordSummaryForReview = {
+    summaryNarrative: null,
+    soapSubjective: [],
+    soapObjective: [],
+    soapAssessment: null,
+    soapPlan: [],
+  }
+  if (value === null || value === undefined) return empty
+  if (typeof value === 'string') {
+    return { ...empty, summaryNarrative: asString(value) }
+  }
+  if (typeof value !== 'object') return empty
+  const o = value as Record<string, unknown>
+  const narrative = asString(o.summary) ?? asString(o.narrative) ?? null
+  const structuredRaw = o.structured
+  if (!structuredRaw || typeof structuredRaw !== 'object') {
+    return { ...empty, summaryNarrative: narrative }
+  }
+  const st = structuredRaw as Record<string, unknown>
+  const assessmentRaw = st.assessment
+  const soapAssessment =
+    typeof assessmentRaw === 'string' && assessmentRaw.trim().length > 0
+      ? assessmentRaw.trim()
+      : null
+  return {
+    summaryNarrative: narrative,
+    soapSubjective: asNonEmptyStringArray(st.subjective),
+    soapObjective: asNonEmptyStringArray(st.objective),
+    soapAssessment,
+    soapPlan: asNonEmptyStringArray(st.plan),
+  }
+}
+
+function parseClinicalInsightsForReview(value: unknown): ClinicalInsightsForReview {
+  const empty: ClinicalInsightsForReview = {
+    missingInfo: [],
+    contradictions: [],
+    redFlags: [],
+    medDiscrepancies: [],
+    followUpQuestions: [],
+    planSuggestions: [],
+    notesForClinician: [],
+  }
+  if (value === null || value === undefined || typeof value !== 'object') return empty
+  const o = value as Record<string, unknown>
+  return {
+    missingInfo: asNonEmptyStringArray(o.missingInfo ?? o.missing_info),
+    contradictions: asNonEmptyStringArray(o.contradictions),
+    redFlags: asNonEmptyStringArray(o.redFlags ?? o.red_flags),
+    medDiscrepancies: asNonEmptyStringArray(o.medDiscrepancies ?? o.med_discrepancies),
+    followUpQuestions: asNonEmptyStringArray(o.followUpQuestions ?? o.follow_up_questions),
+    planSuggestions: asNonEmptyStringArray(o.planSuggestions ?? o.plan_suggestions),
+    notesForClinician: asNonEmptyStringArray(o.notesForClinician ?? o.notes_for_clinician),
+  }
+}
+
+function visitSummaryDisplayText(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') return asString(value)
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>
+    return (
+      asString(o.summary) ??
+      asString(o.text) ??
+      asString(o.note) ??
+      asString(o.visitSummary)
+    )
+  }
+  return null
+}
+
+function splitVisitNoteLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+}
+
+/** Local readers for scribe fields on raw screening detail (`fetchScreeningRaw` stays untyped at the API layer). */
+function readDetailScribeRecordSummary(detail: Record<string, unknown> | null): unknown {
+  if (!detail) return undefined
+  return detail['scribeRecordSummary']
+}
+
+function readDetailVisitSummary(detail: Record<string, unknown> | null): unknown {
+  if (!detail) return undefined
+  return detail['visitSummary']
+}
+
+function readDetailScribeClinicalInsights(detail: Record<string, unknown> | null): unknown {
+  if (!detail) return undefined
+  return detail['scribeRecordClinicalInsights']
+}
+
+function detailHasPersistedScribeOutput(detail: Record<string, unknown> | null): boolean {
+  if (!detail) return false
+  const sum = parseScribeRecordSummaryForReview(readDetailScribeRecordSummary(detail))
+  if (
+    sum.summaryNarrative ||
+    sum.soapSubjective.length > 0 ||
+    sum.soapObjective.length > 0 ||
+    sum.soapAssessment ||
+    sum.soapPlan.length > 0
+  ) {
+    return true
+  }
+  if (visitSummaryDisplayText(readDetailVisitSummary(detail))) return true
+  const ci = parseClinicalInsightsForReview(readDetailScribeClinicalInsights(detail))
+  return (
+    ci.missingInfo.length > 0 ||
+    ci.contradictions.length > 0 ||
+    ci.redFlags.length > 0 ||
+    ci.medDiscrepancies.length > 0 ||
+    ci.followUpQuestions.length > 0 ||
+    ci.planSuggestions.length > 0 ||
+    ci.notesForClinician.length > 0
+  )
+}
+
+function chunkMergeKey(chunk: ScribeChunkRow): string {
+  if (typeof chunk.sessionId === 'string' && typeof chunk.sequenceNumber === 'number') {
+    return `sid:${chunk.sessionId}|seq:${chunk.sequenceNumber}`
+  }
+  return `ts:${chunk.timestamp}|${chunk.content}`
+}
+
+function mergeChunkRows(prev: ScribeChunkRow[], incoming: ScribeChunkRow[]): ScribeChunkRow[] {
+  if (incoming.length === 0) return prev
+  const merged = new Map<string, ScribeChunkRow>()
+  prev.forEach((chunk) => merged.set(chunkMergeKey(chunk), chunk))
+  incoming.forEach((chunk) => merged.set(chunkMergeKey(chunk), chunk))
+  return Array.from(merged.values()).sort(
+    (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+  )
+}
+
+function insightMergeKey(row: ScribeInsightsTimelineRow): string {
+  return `${row.sessionId}|${row.sequenceNumber ?? row.timestamp}`
+}
+
+function mergeInsightRows(
+  prev: ScribeInsightsTimelineRow[],
+  incoming: ScribeInsightsTimelineRow[],
+): ScribeInsightsTimelineRow[] {
+  if (incoming.length === 0) return prev
+  const merged = new Map<string, ScribeInsightsTimelineRow>()
+  prev.forEach((row) => merged.set(insightMergeKey(row), row))
+  incoming.forEach((row) => merged.set(insightMergeKey(row), row))
+  return Array.from(merged.values()).sort((a, b) => {
+    const timeDiff = Date.parse(a.timestamp) - Date.parse(b.timestamp)
+    if (timeDiff !== 0) return timeDiff
+    const sessionDiff = a.sessionId.localeCompare(b.sessionId)
+    if (sessionDiff !== 0) return sessionDiff
+    return (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0)
+  })
+}
+
+function isStaleRecoveryActionMessage(message: string | null): boolean {
+  if (!message) return false
+  return (
+    message.includes('active server session') ||
+    message.includes('Recovered active scribe') ||
+    message.includes('Resume recording or stop')
+  )
+}
+
+function readVisitStatus(detail: Record<string, unknown> | null): {
+  status: 'active' | 'finalized' | null
+  finalizedAt: string | null
+  canFinalize: boolean
+  blockers: string[]
+  clinicianNote: string
+} {
+  const visit = detail?.visit && typeof detail.visit === 'object'
+    ? (detail.visit as Record<string, unknown>)
+    : null
+  const blockers = Array.isArray(visit?.blockers)
+    ? visit?.blockers.filter((item): item is string => typeof item === 'string')
+    : []
+  const status =
+    visit?.status === 'active' || visit?.status === 'finalized'
+      ? visit.status
+      : null
+  return {
+    status,
+    finalizedAt: asString(visit?.finalizedAt),
+    canFinalize: status === 'finalized' ? false : visit?.canFinalize !== false,
+    blockers,
+    clinicianNote: asString(visit?.clinicianNote) ?? '',
+  }
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function extractApiErrorMessage(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null
+  const body = error.bodyText
+  if (!body) return null
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown }
+    if (parsed && typeof parsed.error === 'string') return parsed.error
+  } catch {
+    /* fall through to raw text */
+  }
+  return body
+}
+
+function tabFromRouteParam(tab: 'summary' | 'scribe' | 'notes' | undefined): TabKey {
+  if (tab === 'scribe' || tab === 'notes') return tab
+  return 'summary'
+}
+
+function scribeHeaderStatusLabel(input: {
+  canScribe: boolean
+  scribe: ScribeUiState
+  isScribeProcessing: boolean
+  isScribeReview: boolean
+  isScribeLive: boolean
+  livePhase: LiveScribePhase
+}): string {
+  const { canScribe, scribe, isScribeProcessing, isScribeReview, isScribeLive, livePhase } = input
+  if (!canScribe) return 'Unavailable'
+  if (isScribeProcessing) return 'Processing'
+  if (scribe === 'failed') return 'Needs attention'
+  if (isScribeReview && scribe === 'generated-review') return 'Summary complete'
+  if (isScribeReview) return 'Review ready'
+  if (isScribeLive && livePhase === 'starting') return 'Starting'
+  if (isScribeLive && livePhase === 'recording') return 'Recording'
+  if (isScribeLive && livePhase === 'paused-locally') return 'Paused'
+  if (isScribeLive) return 'Reconnecting'
+  return 'Ready'
+}
+
+export function ScreeningDetailScreen({ route }: Props) {
+  const { screeningId, initialTab } = route.params
+  const [activeTab, setActiveTab] = useState<TabKey>(() => tabFromRouteParam(initialTab))
+  const [detail, setDetail] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [scribe, setScribe] = useState<ScribeUiState>('idle')
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [canScribe, setCanScribe] = useState(false)
+  const [timelineCount, setTimelineCount] = useState(0)
+  const [chunkCount, setChunkCount] = useState(0)
+  const [scribeChunkRows, setScribeChunkRows] = useState<ScribeChunkRow[]>([])
+  const [scribeInsightRows, setScribeInsightRows] = useState<ScribeInsightsTimelineRow[]>([])
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
+  const [isGeneratingInsights, setIsGeneratingInsights] = useState(false)
+  const [generationStepMessage, setGenerationStepMessage] = useState<string | null>(null)
+  const [scribeFlowError, setScribeFlowError] = useState<string | null>(null)
+  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0)
+  const [generatedSummary, setGeneratedSummary] = useState(false)
+  const [generatedInsights, setGeneratedInsights] = useState(false)
+  const [visitNote, setVisitNote] = useState('')
+  const [savedVisitNote, setSavedVisitNote] = useState('')
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setActiveTab(tabFromRouteParam(initialTab))
+  }, [initialTab])
+
+  const recordingRef = useRef<Audio.Recording | null>(null)
+  const scribeRef = useRef<ScribeUiState>('idle')
+  const sessionIdRef = useRef<string | null>(null)
+  const sequenceRef = useRef(1)
+  const recordingSinceMsRef = useRef<number | null>(null)
+  const elapsedBaseMsRef = useRef(0)
+  const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const uploadChainRef = useRef<Promise<void>>(Promise.resolve())
+  const visitStatus = useMemo(() => readVisitStatus(detail), [detail])
+  const savedVisitNoteLines = useMemo(() => splitVisitNoteLines(savedVisitNote), [savedVisitNote])
+  const canSaveVisitNote = visitNote.trim().length > 0 && visitStatus.status !== 'finalized'
+
+  useEffect(() => {
+    scribeRef.current = scribe
+  }, [scribe])
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  const clearChunkTimer = useCallback(() => {
+    if (chunkTimerRef.current) {
+      clearInterval(chunkTimerRef.current)
+      chunkTimerRef.current = null
+    }
+  }, [])
+
+  const stopAndUnloadCurrentRecording = useCallback(async (): Promise<string | null> => {
+    const currentRecording = recordingRef.current
+    if (!currentRecording) return null
+    try {
+      await currentRecording.stopAndUnloadAsync()
+      return currentRecording.getURI()
+    } catch {
+      return null
+    } finally {
+      recordingRef.current = null
+    }
+  }, [])
+
+  const beginLocalRecording = useCallback(async (): Promise<void> => {
+    const perm = await Audio.requestPermissionsAsync()
+    if (!perm.granted) throw new Error('Microphone permission denied')
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      staysActiveInBackground: true,
+    })
+    const rec = new Audio.Recording()
+    await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
+    await rec.startAsync()
+    recordingRef.current = rec
+    recordingSinceMsRef.current = Date.now()
+  }, [])
+
+  const uploadChunk = useCallback(
+    async (chunk: PendingChunkUpload): Promise<void> => {
+      const activeSessionId = sessionIdRef.current
+      if (!activeSessionId) throw new Error('Missing sessionId')
+
+      const result = await withRetry(() => scribeRecord(screeningId, {
+        uri: chunk.uri,
+        sessionId: activeSessionId,
+        idempotencyKey: chunk.idempotencyKey,
+        sequenceNumber: chunk.sequenceNumber,
+        startedAtMs: chunk.startedAtMs,
+      }), 3, 500)
+      if (result.inserted === false) {
+        if (result.reason === 'session_closed') {
+          setScribe('completed')
+        } else if (result.reason === 'whisper_error') {
+          setScribeFlowError(
+            'Recording upload or transcription failed for a chunk. Generation will not work until transcript capture succeeds.'
+          )
+        } else if (result.reason === 'empty_transcript') {
+          setScribeFlowError('No transcript was captured for a recorded chunk.')
+        } else {
+          setScribeFlowError('A chunk was received by the server but was not stored.')
+        }
+      } else {
+        setScribeFlowError(null)
+        setActionError(null)
+        setGenerationStepMessage(null)
+        setActionMessage((m) => (isStaleRecoveryActionMessage(m) ? null : m))
+        try {
+          const data = await scribeChunks(screeningId)
+          const rows = (data.chunks ?? []) as ScribeChunkRow[]
+          setScribeChunkRows((prev) => {
+            const next = mergeChunkRows(prev, rows)
+            setChunkCount(next.length)
+            return next
+          })
+        } catch {
+          /* keep existing merged rows */
+        }
+      }
+    },
+    [screeningId]
+  )
+
+  const enqueueChunkUpload = useCallback(
+    (chunk: PendingChunkUpload) => {
+      setChunkCount((prev) => prev + 1)
+      uploadChainRef.current = uploadChainRef.current
+        .then(() => uploadChunk(chunk))
+        .catch(() => {
+          setScribeFlowError('Recording upload failed. The audio chunk could not be read or sent to the server.')
+          setScribe('failed')
+        })
+    },
+    [uploadChunk]
+  )
+
+  const rollChunk = useCallback(async () => {
+    if (scribeRef.current !== 'recording') return
+    const uri = await stopAndUnloadCurrentRecording()
+    if (uri) {
+      const nextSequence = sequenceRef.current++
+      enqueueChunkUpload({
+        uri,
+        sequenceNumber: nextSequence,
+        idempotencyKey: uuidv4(),
+        startedAtMs: recordingSinceMsRef.current ?? Date.now(),
+      })
+      elapsedBaseMsRef.current += Math.max(0, Date.now() - (recordingSinceMsRef.current ?? Date.now()))
+      setRecordingElapsedMs(elapsedBaseMsRef.current)
+    }
+    if (scribeRef.current === 'recording') {
+      try {
+        await beginLocalRecording()
+      } catch {
+        setScribe('failed')
+      }
+    }
+  }, [beginLocalRecording, enqueueChunkUpload, stopAndUnloadCurrentRecording])
+
+  const hydrate = useCallback(
+    async (_sessionOverride?: string | null) => {
+      const [session, chunks] = await Promise.all([
+        scribeSession(screeningId),
+        scribeChunks(screeningId),
+      ])
+      const payload = session as ScribeSessionResponse
+      const activeScribeSessionId = payload.activeSession?.id
+      const insights = await (activeScribeSessionId
+        ? scribeInsights(screeningId, activeScribeSessionId)
+        : scribeInsights(screeningId))
+      const chunkRows = (chunks.chunks ?? []) as ScribeChunkRow[]
+      const insightRows = (insights.timeline ?? []) as ScribeInsightsTimelineRow[]
+      setScribeChunkRows((prev) => {
+        const next = mergeChunkRows(prev, chunkRows)
+        setChunkCount(next.length)
+        return next
+      })
+      setScribeInsightRows((prev) => {
+        const next = mergeInsightRows(prev, insightRows)
+        setTimelineCount(next.length)
+        return next
+      })
+      if (activeScribeSessionId) {
+        setSessionId(activeScribeSessionId)
+      } else if (payload.lastStoppedSession?.id) {
+        setSessionId(payload.lastStoppedSession.id)
+      }
+      setScribeFlowError(null)
+      setActionError(null)
+      setGenerationStepMessage(null)
+      setActionMessage((m) => (isStaleRecoveryActionMessage(m) ? null : m))
+    },
+    [screeningId]
+  )
+
+  const refreshDetail = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const me = await fetchAuthMe()
+      setCanScribe(me.capabilities.canUseScribeControls)
+      const s = await fetchScreeningRaw(screeningId)
+      void markScreeningViewed(screeningId).catch(() => undefined)
+      setDetail(s)
+      const visit = s.visit && typeof s.visit === 'object'
+        ? (s.visit as Record<string, unknown>)
+        : null
+      const note = asString(visit?.clinicianNote) ?? ''
+      setSavedVisitNote(note)
+      setVisitNote('')
+      if (canScribe || me.capabilities.canUseScribeControls) {
+        await hydrate()
+      }
+    } catch {
+      setLoadError('Failed to load screening.')
+      setDetail(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [canScribe, hydrate, screeningId])
+
+  useEffect(() => {
+    void refreshDetail()
+  }, [refreshDetail])
+
+  useEffect(() => {
+    if (scribe !== 'recording' && scribe !== 'reconnecting') return
+    if (!sessionId) return
+    const timer = setInterval(() => {
+      void scribeInsights(screeningId, sessionId)
+        .then((data) => {
+          const rows = (data.timeline ?? []) as ScribeInsightsTimelineRow[]
+          setScribeInsightRows((prev) => {
+            const next = mergeInsightRows(prev, rows)
+            setTimelineCount(next.length)
+            return next
+          })
+        })
+        .catch(() => undefined)
+      void scribeChunks(screeningId)
+        .then((data) => {
+          const rows = (data.chunks ?? []) as ScribeChunkRow[]
+          setScribeChunkRows((prev) => {
+            const next = mergeChunkRows(prev, rows)
+            setChunkCount(next.length)
+            return next
+          })
+        })
+        .catch(() => undefined)
+    }, INSIGHTS_POLL_MS)
+    return () => clearInterval(timer)
+  }, [scribe, screeningId, sessionId])
+
+  useEffect(() => {
+    if (scribe !== 'recording') {
+      clearChunkTimer()
+      return
+    }
+    clearChunkTimer()
+    chunkTimerRef.current = setInterval(() => {
+      void rollChunk()
+    }, CHUNK_ROLLOVER_MS)
+    return () => clearChunkTimer()
+  }, [clearChunkTimer, rollChunk, scribe])
+
+  useEffect(() => {
+    if (scribe !== 'recording') {
+      setRecordingElapsedMs(elapsedBaseMsRef.current)
+      return
+    }
+    const timer = setInterval(() => {
+      const since = recordingSinceMsRef.current ?? Date.now()
+      setRecordingElapsedMs(elapsedBaseMsRef.current + Math.max(0, Date.now() - since))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [scribe])
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') return
+      if (scribeRef.current !== 'recording') return
+      void (async () => {
+        const uri = await stopAndUnloadCurrentRecording()
+        if (uri) {
+          const nextSequence = sequenceRef.current++
+          enqueueChunkUpload({
+            uri,
+            sequenceNumber: nextSequence,
+            idempotencyKey: uuidv4(),
+            startedAtMs: recordingSinceMsRef.current ?? Date.now(),
+          })
+        }
+        elapsedBaseMsRef.current += Math.max(0, Date.now() - (recordingSinceMsRef.current ?? Date.now()))
+        recordingSinceMsRef.current = null
+        setRecordingElapsedMs(elapsedBaseMsRef.current)
+        setScribe('paused-locally')
+      })()
+    })
+    return () => sub.remove()
+  }, [enqueueChunkUpload, stopAndUnloadCurrentRecording])
+
+  const onStart = useCallback(async () => {
+    if (!canScribe || scribe === 'recording' || scribe === 'starting') return
+    const enteringAppend = scribe === 'completed' || scribe === 'generated-review'
+    setActionError(null)
+    setScribeFlowError(null)
+    setGenerationStepMessage(null)
+    setActionMessage(null)
+    setScribe('starting')
+    if (enteringAppend) {
+      setGeneratedSummary(false)
+      setGeneratedInsights(false)
+    }
+    elapsedBaseMsRef.current = 0
+    setRecordingElapsedMs(0)
+    let startedSessionId: string | null = null
+    try {
+      const r = await withRetry(() => scribeStart(screeningId), 2)
+      startedSessionId = r.sessionId
+      setSessionId(r.sessionId)
+      sequenceRef.current = 1
+      await beginLocalRecording()
+      setScribe('recording')
+      setScribeFlowError(null)
+      setActionError(null)
+      setGenerationStepMessage(null)
+      setActionMessage(enteringAppend ? 'Recording started.' : 'Scribe recording started.')
+    } catch (e) {
+      if (startedSessionId) {
+        await scribeStop(screeningId, startedSessionId, 'save').catch(() => undefined)
+      }
+      if (e instanceof ApiError && e.status === 409) {
+        try {
+          const j = JSON.parse(e.bodyText) as { sessionId?: string; error?: string }
+          if (j.sessionId) {
+            setSessionId(j.sessionId)
+            setScribe('reconnecting')
+            setActionMessage('Found an active server session. Resume or stop it below.')
+            await hydrate(j.sessionId)
+            return
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      setActionError('Could not start scribe.')
+      setScribe('failed')
+    }
+  }, [beginLocalRecording, canScribe, hydrate, screeningId, scribe])
+
+  const onPauseLocal = useCallback(async () => {
+    if (scribe !== 'recording') return
+    const uri = await stopAndUnloadCurrentRecording()
+    if (uri) {
+      const nextSequence = sequenceRef.current++
+      enqueueChunkUpload({
+        uri,
+        sequenceNumber: nextSequence,
+        idempotencyKey: uuidv4(),
+        startedAtMs: recordingSinceMsRef.current ?? Date.now(),
+      })
+    }
+    elapsedBaseMsRef.current += Math.max(0, Date.now() - (recordingSinceMsRef.current ?? Date.now()))
+    recordingSinceMsRef.current = null
+    setRecordingElapsedMs(elapsedBaseMsRef.current)
+    setScribe('paused-locally')
+  }, [enqueueChunkUpload, scribe, stopAndUnloadCurrentRecording])
+
+  const onResumeLocal = useCallback(async () => {
+    if (scribe !== 'paused-locally' && scribe !== 'reconnecting') return
+    setScribe('reconnecting')
+    try {
+      await beginLocalRecording()
+      setScribe('recording')
+      setScribeFlowError(null)
+      setActionError(null)
+      setGenerationStepMessage(null)
+      setActionMessage('Recording resumed.')
+    } catch {
+      setActionError('Could not resume microphone recording.')
+      setScribe('failed')
+    }
+  }, [beginLocalRecording, scribe])
+
+  const onStop = useCallback(
+    async (action: 'save' | 'discard') => {
+      if (!sessionId) return
+      setScribe('stopping')
+      try {
+        const uri = await stopAndUnloadCurrentRecording()
+        if (uri && action === 'save') {
+          const nextSequence = sequenceRef.current++
+          enqueueChunkUpload({
+            uri,
+            sequenceNumber: nextSequence,
+            idempotencyKey: uuidv4(),
+            startedAtMs: recordingSinceMsRef.current ?? Date.now(),
+          })
+        }
+        await uploadChainRef.current
+        await withRetry(() => scribeStop(screeningId, sessionId, action), 2)
+        elapsedBaseMsRef.current += Math.max(0, Date.now() - (recordingSinceMsRef.current ?? Date.now()))
+        recordingSinceMsRef.current = null
+        setRecordingElapsedMs(elapsedBaseMsRef.current)
+        setScribe(action === 'save' ? 'completed' : 'idle')
+        setActionMessage(action === 'save' ? 'Scribe session stopped.' : 'Scribe session discarded.')
+        await hydrate(sessionId)
+      } catch {
+        setActionError('Could not stop scribe session cleanly.')
+        setScribe('failed')
+      }
+    },
+    [enqueueChunkUpload, hydrate, screeningId, sessionId, stopAndUnloadCurrentRecording]
+  )
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const payload = await scribeSession(screeningId)
+        if (payload.activeSession?.id) {
+          setSessionId(payload.activeSession.id)
+          setScribe('reconnecting')
+          setActionMessage('Recovered active scribe session. Resume recording or stop.')
+          await hydrate(payload.activeSession.id)
+        } else if (payload.lastStoppedSession?.id) {
+          setSessionId(payload.lastStoppedSession.id)
+          setScribe('completed')
+          await hydrate(payload.lastStoppedSession.id)
+        }
+      } catch {
+        // Ignore recovery failures on first load.
+      }
+    })()
+  }, [hydrate, screeningId])
+
+  useEffect(() => {
+    return () => {
+      void stopAndUnloadCurrentRecording()
+      clearChunkTimer()
+    }
+  }, [clearChunkTimer, stopAndUnloadCurrentRecording])
+
+  const runVisitFinalize = useCallback(async () => {
+    setActionError(null)
+    try {
+      const response = await finalizeScreeningVisit(screeningId)
+      setActionMessage(
+        response.warnings.length > 0
+          ? `Visit finalized with warnings: ${response.warnings.join(', ')}`
+          : 'Visit finalized.'
+      )
+      await refreshDetail()
+    } catch {
+      setActionError('Could not finalize this visit.')
+    }
+  }, [refreshDetail, screeningId])
+
+  const runVisitNoteSave = useCallback(async () => {
+    const nextNote = visitNote.trim()
+    if (!nextNote) return
+    setActionError(null)
+    try {
+      const combinedNote = savedVisitNote
+        ? `${savedVisitNote}\n${nextNote}`
+        : nextNote
+      const response = await updateVisitNote(screeningId, combinedNote)
+      if (typeof response.note === 'string') {
+        setSavedVisitNote(response.note)
+      }
+      setVisitNote('')
+      setActionMessage('Visit note saved.')
+      await refreshDetail()
+    } catch {
+      setActionError('Could not save visit note.')
+    }
+  }, [refreshDetail, savedVisitNote, screeningId, visitNote])
+
+  const mapGenerationError = useCallback((err: unknown): string => {
+    const raw = extractApiErrorMessage(err)
+    if (raw === 'No scribe transcript available') {
+      return "Transcript isn't available yet. Refresh the session or stop/save it before generating."
+    }
+    if (raw === 'Scribe summary must be generated first') {
+      return 'Summary must complete before insights.'
+    }
+    return raw ?? 'Generation failed.'
+  }, [])
+
+  const runGenerateSummaryAndInsights = useCallback(async () => {
+    setActionError(null)
+    setActionMessage(null)
+    setScribeFlowError(null)
+    setIsGeneratingSummary(true)
+    setGenerationStepMessage('Processing transcript. This may take a minute...')
+    try {
+      await generateScribeSummary(screeningId)
+      setGeneratedSummary(true)
+      await refreshDetail()
+      setScribeFlowError(null)
+      setActionError(null)
+      setActionMessage((m) => (isStaleRecoveryActionMessage(m) ? null : m))
+      setScribe('generated-review')
+    } catch (e) {
+      setActionError(mapGenerationError(e))
+      setIsGeneratingSummary(false)
+      setGenerationStepMessage(null)
+      setScribe('completed')
+      return
+    }
+    setIsGeneratingSummary(false)
+    setIsGeneratingInsights(true)
+    setGenerationStepMessage('Processing transcript. This may take a minute...')
+    try {
+      await generateScribeInsights(screeningId)
+      setGeneratedInsights(true)
+      await refreshDetail()
+      setScribeFlowError(null)
+      setActionError(null)
+      setActionMessage('Scribe summary and insights generated.')
+    } catch (e) {
+      setActionError(mapGenerationError(e))
+    } finally {
+      setIsGeneratingInsights(false)
+      setGenerationStepMessage(null)
+    }
+  }, [mapGenerationError, refreshDetail, screeningId])
+
+  const runHydrateFromUi = useCallback(async () => {
+    setActionError(null)
+    try {
+      await hydrate()
+    } catch {
+      setActionError('Could not refresh session data.')
+    }
+  }, [hydrate])
+
+  const insightPreviewLines = useMemo(
+    () =>
+      scribeInsightRows
+        .slice(-5)
+        .map((row) => summarizeInsightRecord(row.insights) ?? row.chunkText),
+    [scribeInsightRows]
+  )
+
+  const scribeRecordSummaryParsed = useMemo(
+    () => parseScribeRecordSummaryForReview(readDetailScribeRecordSummary(detail)),
+    [detail],
+  )
+  const visitSummaryReviewText = useMemo(
+    () => visitSummaryDisplayText(readDetailVisitSummary(detail)),
+    [detail],
+  )
+  const clinicalInsightsParsed = useMemo(
+    () => parseClinicalInsightsForReview(readDetailScribeClinicalInsights(detail)),
+    [detail],
+  )
+
+  const reviewGeneration = useMemo(() => {
+    if (isGeneratingSummary || isGeneratingInsights) {
+      return {
+        label: generationStepMessage ?? 'Processing transcript. This may take a minute...',
+        summaryComplete: false,
+      }
+    }
+    if (scribe === 'generated-review') {
+      return { label: 'Summary Complete', summaryComplete: true }
+    }
+    if (scribe === 'completed') {
+      const hasPrior =
+        detailHasPersistedScribeOutput(detail) || generatedSummary || generatedInsights
+      return {
+        label: hasPrior ? 'Regenerate Summary' : 'Generate Summary',
+        summaryComplete: false,
+      }
+    }
+    return { label: 'Generate Summary', summaryComplete: false }
+  }, [
+    detail,
+    generatedInsights,
+    generatedSummary,
+    generationStepMessage,
+    isGeneratingInsights,
+    isGeneratingSummary,
+    scribe,
+  ])
+
+  const isScribeProcessing =
+    scribe === 'stopping' || isGeneratingSummary || isGeneratingInsights
+  const isScribeReview =
+    (scribe === 'completed' || scribe === 'generated-review') && !isScribeProcessing
+  const isScribeLive =
+    scribe === 'starting' ||
+    scribe === 'recording' ||
+    scribe === 'paused-locally' ||
+    scribe === 'reconnecting'
+
+  let livePhase: LiveScribePhase = 'reconnecting'
+  if (scribe === 'starting') livePhase = 'starting'
+  else if (scribe === 'recording') livePhase = 'recording'
+  else if (scribe === 'paused-locally') livePhase = 'paused-locally'
+
+  const showScribeRefreshFooter =
+    canScribe &&
+    (scribe === 'paused-locally' ||
+      scribe === 'completed' ||
+      scribe === 'generated-review' ||
+      scribe === 'failed')
+
+  const scribeHeaderLabel = scribeHeaderStatusLabel({
+    canScribe,
+    scribe,
+    isScribeProcessing,
+    isScribeReview,
+    isScribeLive,
+    livePhase,
+  })
+
+  const transcriptReady = scribeChunkRows.length > 0
+
+  const detailTitle = asString(detail?.patientName) ?? 'Screening workspace'
+
+  return (
+    <ScrollView
+      testID="clinician-screening-detail-root"
+      style={luminaStyles.screen}
+      contentContainerStyle={styles.wrap}
+    >
+      <Text style={styles.title}>{detailTitle}</Text>
+        <Text style={styles.subtitle}>Summary, scribe, and visit notes.</Text>
+
+        {loading ? <ActivityIndicator color={lumina.primary} /> : null}
+        {loadError ? <ErrorState body={loadError} onRetry={() => void refreshDetail()} /> : null}
+        {actionError ? <Text style={luminaStyles.errorText}>{actionError}</Text> : null}
+        {actionMessage ? <Text style={styles.info}>{actionMessage}</Text> : null}
+
+        <SegmentedControl
+          tabs={WORKSPACE_TABS}
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          fullWidth
+          accessibilityLabel="Screening workspace sections"
+        />
+
+        {activeTab === 'summary' && !loading && !detail && !loadError ? (
+          <EmptyState title="No screening data" body="Retry to reload this encounter." onAction={() => void refreshDetail()} actionLabel="Retry" />
+        ) : null}
+
+        {activeTab === 'summary' && detail ? (
+          <MobileScreeningSummary detail={detail} visitStatus={visitStatus} />
+        ) : null}
+
+        {activeTab === 'scribe' ? (
+          <View style={[styles.card, styles.scribeCard]}>
+            <View style={styles.scribeHeaderRow}>
+              <View style={styles.scribeHeaderBadge}>
+                <Ionicons name="mic" size={18} color={lumina.onPrimary} />
+              </View>
+              <Text style={styles.scribeHeaderTitle}>Scribe session</Text>
+              <View style={styles.scribeHeaderPill}>
+                <Text style={styles.scribeHeaderPillText}>{scribeHeaderLabel}</Text>
+              </View>
+            </View>
+
+            {scribeFlowError ? <Text style={luminaStyles.errorText}>{scribeFlowError}</Text> : null}
+
+            {!canScribe ? (
+              <>
+                <Text style={styles.cardBody}>Scribe state: {scribe}</Text>
+                <Text style={styles.cardBody}>Timer: {formatDuration(recordingElapsedMs)}</Text>
+                <Text style={styles.scribeMetaLine}>Chunks uploaded: {chunkCount}</Text>
+                <Text style={styles.scribeMetaLine}>Insights timeline rows: {timelineCount}</Text>
+
+                {scribeChunkRows.length > 0 ? (
+                  <View style={styles.row}>
+                    <Text style={styles.rowTitle}>Recent transcript</Text>
+                    {scribeChunkRows.slice(-5).map((chunk, idx) => {
+                      const key = `${chunk.sessionId ?? 'chunk'}-${chunk.sequenceNumber ?? idx}-${chunk.timestamp}`
+                      return (
+                        <Text key={key} style={styles.rowBody}>
+                          {chunk.content}
+                        </Text>
+                      )
+                    })}
+                  </View>
+                ) : null}
+
+                {scribeInsightRows.length > 0 ? (
+                  <View style={styles.row}>
+                    <Text style={styles.rowTitle}>Recent insights</Text>
+                    {scribeInsightRows.slice(-5).map((row) => (
+                      <Text
+                        key={`${row.sessionId}-${row.sequenceNumber}-${row.timestamp}`}
+                        style={styles.rowBody}
+                      >
+                        {summarizeInsightRecord(row.insights) ?? row.chunkText}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+
+                <Text style={styles.cardBody}>Scribe controls are disabled for this account.</Text>
+              </>
+            ) : isScribeProcessing ? (
+              <MobileScribeProcessingPanel
+                scribeStopping={scribe === 'stopping'}
+                generationStepMessage={generationStepMessage}
+                isGeneratingSummary={isGeneratingSummary}
+                isGeneratingInsights={isGeneratingInsights}
+              />
+            ) : scribe === 'failed' ? (
+              <MobileScribeHeroState
+                variant="failed"
+                onStart={onStart}
+                sessionId={sessionId}
+                onRecoverTranscript={
+                  sessionId
+                    ? () => void recoverScribeTranscript(screeningId, { sessionId })
+                    : undefined
+                }
+              />
+            ) : isScribeReview ? (
+              <MobileScribeReviewPanel
+                scribeRecordSummary={scribeRecordSummaryParsed}
+                visitSummaryText={visitSummaryReviewText}
+                clinicalInsights={clinicalInsightsParsed}
+                transcriptReady={transcriptReady}
+                sessionId={sessionId}
+                generating={isGeneratingSummary || isGeneratingInsights}
+                generationPrimaryLabel={reviewGeneration.label}
+                summaryGenerationComplete={reviewGeneration.summaryComplete}
+                onGenerate={() => void runGenerateSummaryAndInsights()}
+                onAddToRecording={() => void onStart()}
+                onOpenVisitWorkspace={() => setActiveTab('notes')}
+              />
+            ) : isScribeLive ? (
+              <MobileScribeLivePanel
+                phase={livePhase}
+                timerLabel={formatDuration(recordingElapsedMs)}
+                chunkRows={scribeChunkRows}
+                insightPreviewLines={insightPreviewLines}
+                chunkCount={chunkCount}
+                insightCount={timelineCount}
+                onPauseLocal={() => void onPauseLocal()}
+                onResumeLocal={() => void onResumeLocal()}
+                onStopSave={() => void onStop('save')}
+                onStopDiscard={() => void onStop('discard')}
+                onRecoverTranscript={() =>
+                  void recoverScribeTranscript(screeningId, sessionId ? { sessionId } : {})
+                }
+                onRefreshSessionData={() => void runHydrateFromUi()}
+              />
+            ) : (
+              <MobileScribeHeroState variant="idle" onStart={onStart} />
+            )}
+
+            {showScribeRefreshFooter ? (
+              <Pressable
+                style={({ pressed }) => [
+                  luminaStyles.secondaryButton,
+                  styles.scribeRefreshButton,
+                  styles.scribeClusterSpacer,
+                  pressed && luminaStyles.pressedButton,
+                ]}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  void runHydrateFromUi()
+                }}
+              >
+                <Text style={luminaStyles.secondaryButtonText}>Refresh session data</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {activeTab === 'notes' && detail ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Visit notes</Text>
+
+            <Text style={styles.fieldLabel}>Saved note</Text>
+            <View style={styles.row}>
+              <Text style={styles.rowTitle}>Clinician note</Text>
+              {savedVisitNoteLines.length > 0 ? (
+                savedVisitNoteLines.map((line, index) => (
+                  <View key={`${index}-${line}`} style={styles.bulletRow}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={[styles.rowBody, styles.bulletBody]}>{line}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={[styles.rowBody, styles.emptyNoteText]}>No visit note saved yet.</Text>
+              )}
+            </View>
+
+            <Text style={styles.fieldLabel}>New note</Text>
+            <TextInput
+              style={styles.input}
+              value={visitNote}
+              onChangeText={setVisitNote}
+              multiline
+              placeholder="Add clinician note"
+              placeholderTextColor={lumina.onSurfaceVariant}
+            />
+            <Pressable
+              style={({ pressed }) => [
+                luminaStyles.actionTintedButton,
+                !canSaveVisitNote ? styles.disabled : undefined,
+                pressed && canSaveVisitNote && luminaStyles.pressedButton,
+              ]}
+              onPress={() => void runVisitNoteSave()}
+              disabled={!canSaveVisitNote}
+            >
+              <Text style={luminaStyles.actionTintedButtonText}>Save note</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                luminaStyles.primaryButton,
+                visitStatus.status === 'finalized' || !visitStatus.canFinalize ? styles.disabled : undefined,
+                pressed && luminaStyles.pressedButton,
+              ]}
+              onPress={() => void runVisitFinalize()}
+              disabled={visitStatus.status === 'finalized' || !visitStatus.canFinalize}
+            >
+              <Text style={luminaStyles.primaryButtonText}>
+                {visitStatus.status === 'finalized' ? 'Visit finalized' : 'Finalize visit'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+    </ScrollView>
+  )
+}
+
+const styles = StyleSheet.create({
+  wrap: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 32,
+    gap: 12,
+  },
+  title: {
+    color: lumina.onSurface,
+    fontSize: 26,
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  info: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 14,
+  },
+  card: {
+    borderRadius: 24,
+    backgroundColor: lumina.surfaceLowest,
+    padding: 14,
+    gap: 8,
+  },
+  sectionTitle: {
+    color: lumina.onSurface,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  cardBody: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  scribeMetaLine: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  fieldLabel: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  input: {
+    borderRadius: 16,
+    minHeight: 44,
+    padding: 12,
+    backgroundColor: lumina.surface,
+    color: lumina.onSurface,
+  },
+  row: {
+    gap: 8,
+    borderRadius: 16,
+    backgroundColor: lumina.surface,
+    padding: 10,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  bullet: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  bulletBody: {
+    flex: 1,
+  },
+  scribeClusterSpacer: {
+    marginTop: 10,
+  },
+  scribeCard: {
+    gap: 12,
+  },
+  scribeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  scribeHeaderBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: lumina.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scribeHeaderTitle: {
+    flex: 1,
+    color: lumina.onSurface,
+    fontFamily: luminaFonts.displaySemi,
+    fontSize: 18,
+  },
+  scribeHeaderPill: {
+    backgroundColor: lumina.secondaryContainer,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  scribeHeaderPillText: {
+    color: lumina.onSecondaryContainer,
+    fontFamily: luminaFonts.bodySemi,
+    fontSize: 12,
+  },
+  scribeRefreshButton: {
+    alignSelf: 'stretch',
+    minHeight: 52,
+  },
+  rowTitle: {
+    color: lumina.onSurface,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  rowBody: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  emptyNoteText: {
+    fontStyle: 'italic',
+  },
+  disabled: {
+    opacity: 0.6,
+  },
+})

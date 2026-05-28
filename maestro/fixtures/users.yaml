@@ -1,0 +1,5 @@
+# Maestro placeholders for deep-link + lifecycle flows (Phase 8+)
+userEmail: REPLACE_ME_EMAIL
+userPassword: REPLACE_ME_PASSWORD
+clinicianEmail: REPLACE_ME_EMAIL
+clinicianPassword: REPLACE_ME_PASSWORD
