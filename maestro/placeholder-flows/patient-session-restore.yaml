@@ -1,0 +1,29 @@
+appId: com.bubbl.mobile.dev
+---
+# Deferred flow: requires deterministic seeded patient credentials before promotion.
+# Keep outside mobile/maestro/flows active discovery until fixture/env wiring is stable.
+- launchApp
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-patient-button
+- tapOn:
+    id: patient-auth-identifier-input
+- inputText: ${USER_EMAIL}
+- tapOn:
+    id: patient-auth-password-input
+- inputText: ${USER_PASSWORD}
+- tapOn:
+    id: patient-auth-continue-button
+- assertVisible:
+    text: Home
+- launchApp:
+    clearState: false
+- assertVisible:
+    text: Home
+- tapOn:
+    id: tab-patient-profile
+- tapOn:
+    id: sign-out-button
+- assertVisible:
+    text: Welcome to Bubbl

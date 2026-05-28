@@ -1,0 +1,4 @@
+appId: com.bubbl.mobile.dev
+---
+# Placeholder flow (patient-review-complete). Expand after web seed/auth is stable and testIDs match.
+- launchApp

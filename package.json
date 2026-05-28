@@ -11,12 +11,21 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e:mobile": "set -a; [ -f .env.local ] && . ./.env.local; set +a; bash -c 'set -e; (cd ../frontend && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npx tsx scripts/e2e-mobile-bootstrap.ts) > .e2e.generated.env; set -a; . ./.e2e.generated.env; set +a; cleanup() { code=$?; (cd ../frontend && E2E_RUN_ID=\"$E2E_RUN_ID\" npm run e2e:cleanup:execute) || true; rm -f .e2e.generated.env; exit \"$code\"; }; trap cleanup EXIT; NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/smoke && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/patient-invite.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/patient-checkin-start.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/patient-session-restore.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/clinician-intake-queue.yaml && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/clinician-patients.yaml'",
+    "test:e2e:mobile:smoke": "set -a; [ -f .env.local ] && . ./.env.local; set +a; NODE_ENV=development NEXT_PUBLIC_APP_ENV=local maestro test maestro/flows/smoke",
+    "test:ci:pr": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run typecheck && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run lint",
+    "test:ci:mobile": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run typecheck && NODE_ENV=development NEXT_PUBLIC_APP_ENV=local npm run lint && npm run e2e:doctor && npm run test:e2e:mobile:smoke",
+    "e2e:doctor": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local bash scripts/e2e-doctor.sh mobile",
+    "e2e:inventory": "NODE_ENV=development NEXT_PUBLIC_APP_ENV=local bash scripts/generate-e2e-inventory.sh mobile"
   },
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^9.0.0",
+    "@expo-google-fonts/manrope": "^0.4.2",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-community/datetimepicker": "7.6.1",
+    "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "@supabase/supabase-js": "^2.49.1",
@@ -25,6 +34,9 @@
     "expo-clipboard": "~6.0.3",
     "expo-constants": "~16.0.2",
     "expo-dev-client": "~4.0.29",
+    "expo-file-system": "~17.0.1",
+    "expo-font": "~12.0.10",
+    "expo-haptics": "~13.0.1",
     "expo-linear-gradient": "~13.0.2",
     "expo-linking": "~6.3.1",
     "expo-notifications": "~0.28.19",
@@ -53,7 +65,9 @@
     "eslint": "^8.57.0",
     "eslint-config-expo": "~7.0.0",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^2.7.1",
     "prettier": "^3.3.3",
+    "reactotron-react-native": "~5.1.13",
     "typescript": "~5.3.3"
   }
 }
