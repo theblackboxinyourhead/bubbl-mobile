@@ -1,0 +1,50 @@
+appId: com.bubbl.mobile.dev
+---
+## Clinician intake queue: login, open seeded queue screening with status/channel/visit/scribe state, summary tab, scribe tab, return.
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-clinician-button
+- tapOn:
+    id: clinician-login-email-input
+- inputText: ${CLINICIAN_EMAIL}
+- tapOn:
+    id: clinician-login-password-input
+- inputText: ${CLINICIAN_PASSWORD}
+- tapOn:
+    id: clinician-login-submit-button
+- assertVisible:
+    text: Today
+- tapOn:
+    id: tab-clinician-intake
+- assertVisible:
+    id: clinician-intake-search-input
+- tapOn:
+    id: clinician-intake-search-input
+- inputText: ${E2E_CLINICIAN_PATIENT_NAME}
+- assertVisible:
+    id: clinician-intake-row-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
+- assertVisible:
+    text: Scribe in progress
+- tapOn:
+    id: clinician-intake-row-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
+- assertVisible:
+    id: clinician-screening-detail-root
+- assertVisible:
+    text: Visit
+- assertVisible:
+    text: active
+- assertVisible:
+    text: Summary
+- tapOn:
+    text: Scribe
+- assertVisible:
+    text: Scribe session
+- tapOn:
+    text: Summary
+- tapOn:
+    id: tab-clinician-intake
+- assertVisible:
+    id: clinician-intake-search-input

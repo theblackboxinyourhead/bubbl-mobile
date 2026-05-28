@@ -1,0 +1,48 @@
+appId: com.bubbl.mobile.dev
+---
+## Clinician patients roster: login, search seeded patient, open profile + screening detail.
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: Welcome to Bubbl
+- tapOn:
+    id: launch-clinician-button
+- tapOn:
+    id: clinician-login-email-input
+- inputText: ${CLINICIAN_EMAIL}
+- tapOn:
+    id: clinician-login-password-input
+- inputText: ${CLINICIAN_PASSWORD}
+- tapOn:
+    id: clinician-login-submit-button
+- assertVisible:
+    text: Today
+- tapOn:
+    id: tab-clinician-patients
+- assertVisible:
+    id: clinician-patients-search-input
+- tapOn:
+    id: clinician-patients-search-input
+- inputText: ${E2E_CLINICIAN_PATIENT_NAME}
+- assertVisible:
+    id: clinician-patients-row-${E2E_CLINICIAN_PATIENT_ID}
+- tapOn:
+    id: clinician-patients-row-${E2E_CLINICIAN_PATIENT_ID}
+- assertVisible:
+    id: clinician-patient-profile-root
+- assertVisible:
+    text: ${E2E_CLINICIAN_PATIENT_NAME}
+- tapOn:
+    text: History
+- assertVisible:
+    text: Screening history
+- assertVisible:
+    id: clinician-patient-profile-screening-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
+- tapOn:
+    id: clinician-patient-profile-screening-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
+- assertVisible:
+    id: clinician-screening-detail-root
+- tapOn:
+    id: tab-clinician-patients
+- assertVisible:
+    id: clinician-patients-search-input

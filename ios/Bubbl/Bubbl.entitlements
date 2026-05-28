@@ -7,6 +7,7 @@
     <key>com.apple.developer.associated-domains</key>
     <array>
       <string>applinks:dev.bubblhealth.ai</string>
+      <string>applinks:app.bubblhealth.ai</string>
     </array>
   </dict>
 </plist>
