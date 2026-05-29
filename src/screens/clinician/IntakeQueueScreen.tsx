@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   queueStatusIndicatorSlot: {
-    width: 16,
+    width: 24,
     minHeight: 16,
     marginRight: 0,
     alignItems: 'flex-start',

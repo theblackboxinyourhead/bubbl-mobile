@@ -193,12 +193,15 @@ export function PatientsScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('PatientProfile', { patientId: row.id })}
           >
             <View style={styles.rosterMainInner}>
-              <View
-                style={[
-                  luminaStyles.statusDot,
-                  isNeverSent ? luminaStyles.statusDotAttention : styles.statusDotTransparent,
-                ]}
-              />
+              <View style={styles.rosterStatusIndicatorSlot}>
+                <View
+                  style={[
+                    luminaStyles.statusDot,
+                    styles.rosterStatusDot,
+                    isNeverSent ? luminaStyles.statusDotAttention : styles.statusDotTransparent,
+                  ]}
+                />
+              </View>
               <View style={styles.rosterTextCol}>
                 <Text style={luminaStyles.rowTitleStrong}>{row.fullName}</Text>
                 {showSentMeta ? (
@@ -282,6 +285,16 @@ const styles = StyleSheet.create({
   rosterMainInner: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  rosterStatusIndicatorSlot: {
+    width: 24,
+    minHeight: 16,
+    marginRight: 0,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  rosterStatusDot: {
+    marginRight: 0,
   },
   rosterTextCol: {
     flex: 1,
