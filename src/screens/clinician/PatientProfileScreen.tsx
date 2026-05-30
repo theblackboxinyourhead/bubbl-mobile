@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useFocusEffect } from '@react-navigation/native'
 import { Feather } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
@@ -230,9 +231,26 @@ export function PatientProfileScreen({ route, navigation }: Props) {
     }
   }, [patientId])
 
+  const didMountFocusRef = useRef(false)
+  const loadRef = useRef(load)
+
+  useEffect(() => {
+    loadRef.current = load
+  }, [load])
+
   useEffect(() => {
     void load()
   }, [load])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!didMountFocusRef.current) {
+        didMountFocusRef.current = true
+        return
+      }
+      void loadRef.current()
+    }, [])
+  )
 
   const medicalGroups = useMemo(() => deriveMedicalHistoryGroups(profile?.medicalHistory), [profile?.medicalHistory])
 

@@ -230,6 +230,13 @@ function detailHasPersistedScribeOutput(detail: Record<string, unknown> | null):
   )
 }
 
+function detailScribeUiState(detail: Record<string, unknown> | null): ScribeUiState | null {
+  if (detailHasPersistedScribeOutput(detail)) return 'generated-review'
+  const status = asString(detail?.['scribeStatus'])
+  if (status === 'completed' || status === 'stopped') return 'completed'
+  return null
+}
+
 function chunkMergeKey(chunk: ScribeChunkRow): string {
   if (typeof chunk.sessionId === 'string' && typeof chunk.sequenceNumber === 'number') {
     return `sid:${chunk.sessionId}|seq:${chunk.sequenceNumber}`
@@ -569,6 +576,19 @@ export function ScreeningDetailScreen({ route }: Props) {
       setVisitNote('')
       if (canScribe || me.capabilities.canUseScribeControls) {
         await hydrate()
+      }
+      const nextState = detailScribeUiState(s)
+      const live = scribeRef.current
+      const isLive =
+        live === 'starting' ||
+        live === 'recording' ||
+        live === 'paused-locally' ||
+        live === 'reconnecting' ||
+        live === 'stopping'
+      if (nextState && !isLive) {
+        setScribe(nextState)
+        const detailSessionId = asString(s['lastScribeSessionId'])
+        if (detailSessionId) setSessionId(detailSessionId)
       }
     } catch {
       setLoadError('Failed to load screening.')
