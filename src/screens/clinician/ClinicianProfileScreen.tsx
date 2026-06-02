@@ -130,14 +130,14 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
       {!loading && !error ? (
         <>
           <SummarySectionCard title="Profile" icon="person-outline">
-            <SummaryDataRow
-              inline
+            <InlineWrapRow
+              emphasize
               label="Name"
               value={formatFullName(settings?.provider.firstName ?? '', settings?.provider.lastName ?? '')}
             />
-            <SummaryDataRow inline label="Email" value={email} />
-            <SummaryDataRow inline label="Clinic name" value={settings?.clinic.name || null} />
-            <SummaryDataRow inline label="Clinic phone" value={formatPhoneForDisplay(settings?.clinic.phone)} />
+            <InlineWrapRow label="Email" value={email} />
+            <InlineWrapRow label="Clinic name" value={settings?.clinic.name || null} />
+            <InlineWrapRow label="Clinic phone" value={formatPhoneForDisplay(settings?.clinic.phone)} />
             <InlineWrapRow label="Address" value={dedupeAddress(settings?.clinic.address)} />
             <SummaryDataRow
               inline
@@ -157,26 +157,24 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
               label="Status"
               valueNode={<SummaryBadge tone={inboundAdminStatusTone} label={inboundAdminStatusLabel} />}
             />
-            <SummaryDataRow
-              inline
+            <InlineWrapRow
               label="Clinic primary phone"
               value={formatPhoneForDisplay(settings?.clinic.phone)}
             />
             {settings?.inboundAdmin.message ? (
-              <SummaryDataRow inline label="Message" value={settings.inboundAdmin.message} />
+              <InlineWrapRow label="Message" value={settings.inboundAdmin.message} />
             ) : null}
             {settings &&
             (settings.inboundAdmin.status === 'enabled' || settings.inboundAdmin.status === 'needs_attention') &&
             settings.inboundAdmin.inboundAdminTwilioNumber ? (
-              <SummaryDataRow
-                inline
+              <InlineWrapRow
                 label="Bubbl call-in number"
                 value={formatPhoneForDisplay(settings.inboundAdmin.inboundAdminTwilioNumber)}
               />
             ) : null}
             {settings?.inboundAdmin.status === 'enabled' ? (
               <>
-                <SummaryDataRow inline label="Option 1" value="Share this number with patients." />
+                <InlineWrapRow label="Option 1" value="Share this number with patients." />
                 <InlineWrapRow
                   label="Option 2"
                   value="Forward your clinic's existing line to this number."
@@ -186,8 +184,8 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
           </SummarySectionCard>
 
           <SummarySectionCard title="Support" icon="help-circle-outline">
-            {supportEmail ? <SummaryDataRow inline label="Email" value={supportEmail} /> : null}
-            {supportPhone ? <SummaryDataRow inline label="Phone" value={supportPhone} /> : null}
+            {supportEmail ? <InlineWrapRow label="Email" value={supportEmail} /> : null}
+            {supportPhone ? <InlineWrapRow label="Phone" value={supportPhone} /> : null}
             {!supportEmail && !supportPhone ? (
               <SummaryEmptyState label="No support contacts on file." />
             ) : null}
@@ -208,12 +206,20 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
   )
 }
 
-function InlineWrapRow({ label, value }: { label: string; value: string | null }) {
+function InlineWrapRow({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string
+  value: string | null
+  emphasize?: boolean
+}) {
   const display = value && value.trim().length > 0 ? value : '—'
   return (
     <View style={styles.wrapRow}>
       <Text style={styles.wrapLabel}>{label}</Text>
-      <Text style={styles.wrapValue}>{display}</Text>
+      <Text style={[styles.wrapValue, emphasize && styles.wrapValueStrong]}>{display}</Text>
     </View>
   )
 }
@@ -244,7 +250,10 @@ const styles = StyleSheet.create({
     flex: 1,
     color: lumina.onSurface,
     fontSize: 15,
-    fontFamily: luminaFonts.bodySemi,
+    fontFamily: luminaFonts.body,
     lineHeight: 20,
+  },
+  wrapValueStrong: {
+    fontFamily: luminaFonts.bodySemi,
   },
 })
