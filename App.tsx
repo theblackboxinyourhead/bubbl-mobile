@@ -25,7 +25,7 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans'
 import { supabase } from '@/lib/supabase'
 import { ApiError } from '@/lib/apiClient'
-import { fetchAuthMe } from '@/api/auth'
+import { ensureAuthMeWithBootstrap, fetchAuthMe } from '@/api/auth'
 import { RootNavigator } from '@/navigation/RootNavigator'
 import { linking } from '@/navigation/linking'
 import { navigationRef, navigateInviteOrFallback } from '@/navigation/navigationRef'
@@ -35,6 +35,7 @@ import {
   clearUserLocalState,
   loadActiveScreeningContext,
   loadAuthOriginRoleHint,
+  loadOAuthRoleHint,
   saveActiveScreeningContext,
 } from '@/lib/storage'
 import { fetchScreeningPatient } from '@/api/screenings'
@@ -67,6 +68,26 @@ function parseInviteScreeningUuid(value: string | null): string | null {
 }
 
 type LoggedOutPath = 'launchChoice' | 'patientAuth' | 'patientInvite' | 'clinicianAuth'
+
+function urlHasAuthPasswordResetPath(url: string): boolean {
+  return (
+    url.includes('/auth/password-flows/update-password') ||
+    url.includes('://auth/password-flows/update-password')
+  )
+}
+
+function matchAuthCallbackProvider(url: string): string | null {
+  const m = url.match(/(?:\/|:\/\/)(auth\/callback\/([a-z0-9_-]+))/i)
+  return m?.[2]?.toLowerCase() ?? null
+}
+
+function urlHasAuthCallbackPath(url: string): boolean {
+  return (
+    matchAuthCallbackProvider(url) != null ||
+    url.includes('/auth/callback/email') ||
+    url.includes('://auth/callback/email')
+  )
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -256,7 +277,11 @@ export default function App() {
 
       try {
         setBootstrapError(null)
-        const me = await fetchAuthMe()
+        const oauthRoleHint = await loadOAuthRoleHint().catch(() => null)
+        const originRoleHint = await loadAuthOriginRoleHint().catch(() => null)
+        const roleHint = oauthRoleHint ?? originRoleHint
+        const registrationType = oauthRoleHint ? 'sso' : 'email'
+        const me = await ensureAuthMeWithBootstrap(roleHint, registrationType)
         if (__DEV__) console.log('[mobile auth] fetchAuthMe: user_type =', me.user.user_type, 'companyId =', !!(me.user as Record<string, unknown>).companyId)
         currentUserIdRef.current = me.user.id
 
@@ -372,6 +397,15 @@ export default function App() {
     await task
   }, [routeToLoggedOutPath])
 
+  const shouldDeferBackgroundAuthBootstrap = useCallback(() => {
+    const queued = queuedUrlRef.current
+    if (queued && urlHasAuthCallbackPath(queued)) {
+      return true
+    }
+    const currentRoute = navigationRef.getCurrentRoute()?.name
+    return currentRoute === 'AuthCallback' || currentRoute === 'EmailCallback'
+  }, [])
+
   const handlePasswordSignInAccepted = useCallback(() => {
     setAuthBootstrapLoading(true)
     void runBootstrap()
@@ -388,7 +422,7 @@ export default function App() {
         return
       }
 
-      if (url.includes('/auth/password-flows/update-password')) {
+      if (urlHasAuthPasswordResetPath(url)) {
         ensureLaunchMode()
         navigationRef.navigate('PasswordResetUpdate', { rawUrl: url })
         return
@@ -450,9 +484,8 @@ export default function App() {
         return
       }
 
-      const callbackMatch = url.match(/\/auth\/callback\/([a-z0-9_-]+)/i)
-      if (callbackMatch) {
-        const provider = callbackMatch[1].toLowerCase()
+      const provider = matchAuthCallbackProvider(url)
+      if (provider) {
         if (provider === 'email') {
           ensureLaunchMode()
           navigationRef.navigate('EmailCallback', { rawUrl: url })
@@ -482,13 +515,14 @@ export default function App() {
         return
       }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (shouldDeferBackgroundAuthBootstrap()) return
         void runBootstrap()
       }
     })
     return () => {
       subAuth.data.subscription.unsubscribe()
     }
-  }, [reconcileSignedOut, runBootstrap])
+  }, [reconcileSignedOut, runBootstrap, shouldDeferBackgroundAuthBootstrap])
 
   useEffect(() => {
     const notifSub = Notifications.addNotificationResponseReceivedListener(
@@ -523,10 +557,12 @@ export default function App() {
       const initialUrl = await Linking.getInitialURL()
       if (initialUrl?.includes('screening/verify')) {
         queuedUrlRef.current = initialUrl
-      } else if (
-        initialUrl?.includes('/auth/callback/') ||
-        initialUrl?.includes('/auth/password-flows/update-password')
-      ) {
+      } else if (initialUrl != null && urlHasAuthCallbackPath(initialUrl)) {
+        ensureLaunchMode()
+        queuedUrlRef.current = initialUrl
+        setReady(true)
+        return
+      } else if (initialUrl != null && urlHasAuthPasswordResetPath(initialUrl)) {
         ensureLaunchMode()
         queuedUrlRef.current = initialUrl
       }
@@ -535,7 +571,7 @@ export default function App() {
 
     const appSub = AppState.addEventListener('change', (s: AppStateStatus) => {
       setAppState(s)
-      if (s === 'active') void runBootstrap()
+      if (s === 'active' && !shouldDeferBackgroundAuthBootstrap()) void runBootstrap()
     })
 
     const linkSub = Linking.addEventListener('url', ({ url }) => {
@@ -546,20 +582,11 @@ export default function App() {
       appSub.remove()
       linkSub.remove()
     }
-  }, [ensureLaunchMode, handleIncomingUrl, runBootstrap])
+  }, [ensureLaunchMode, handleIncomingUrl, runBootstrap, shouldDeferBackgroundAuthBootstrap])
 
   const flushPendingRoutes = useCallback(() => {
     const p = pendingNav.current
     if (!p || !navigationRef.isReady()) return
-    const navRoutes = navigationRef.getState()?.routes ?? []
-    if (
-      (p.route === 'patientHome' || p.route === 'patientPhoneVerification' || p.route === 'intake' || p.route === 'checkin') &&
-      !navRoutes.some(r => r.name === 'Patient')
-    ) return
-    if (
-      (p.route === 'clinicianHome' || p.route === 'clinicianCompanyRegistration') &&
-      !navRoutes.some(r => r.name === 'Clinician')
-    ) return
     pendingNav.current = null
     setAuthBootstrapLoading(false)
     if (p.route === 'detail') {
@@ -658,6 +685,7 @@ export default function App() {
                 bootstrapAuthError={bootstrapError}
                 authBootstrapLoading={authBootstrapLoading}
                 onPasswordSignInAccepted={handlePasswordSignInAccepted}
+                onIncomingAuthUrl={handleIncomingUrl}
               />
               <StatusBar style="dark" />
             </NavigationContainer>

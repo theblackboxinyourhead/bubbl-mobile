@@ -16,6 +16,11 @@ function callbackPath(provider: string): string {
   return `/auth/callback/${provider}`
 }
 
+function urlIncludesCallbackPath(url: string, path: string): boolean {
+  const cleanedPath = path.replace(/^\//, '')
+  return url.includes(path) || url.includes(`://${cleanedPath}`)
+}
+
 export function AuthCallbackScreen({ route, onAuthResolved, onAuthError }: Props) {
   const [status, setStatus] = useState('Completing sign-in...')
   const doneRef = useRef(false)
@@ -36,9 +41,9 @@ export function AuthCallbackScreen({ route, onAuthResolved, onAuthError }: Props
         const initialUrl = await Linking.getInitialURL()
         const targetPath = callbackPath(provider)
         const url =
-          route.params.rawUrl && route.params.rawUrl.includes(targetPath)
+          route.params.rawUrl && urlIncludesCallbackPath(route.params.rawUrl, targetPath)
             ? route.params.rawUrl
-            : initialUrl && initialUrl.includes(targetPath)
+            : initialUrl && urlIncludesCallbackPath(initialUrl, targetPath)
               ? initialUrl
               : null
 

@@ -14,6 +14,7 @@ type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianAuthEntry
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }
 
 export function LoginScreen({
@@ -22,6 +23,7 @@ export function LoginScreen({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: Props) {
   const [isSignIn, setIsSignIn] = useState(true)
   const [firstName, setFirstName] = useState('')
@@ -89,8 +91,11 @@ export function LoginScreen({
     try {
       await saveOAuthRoleHint('clinician')
       await saveAuthOriginRoleHint('clinician')
-      const { url } = await startOAuthFlow({ provider })
-      await WebBrowser.openBrowserAsync(url)
+      const { url, redirectTo } = await startOAuthFlow({ provider })
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectTo)
+      if (result.type === 'success' && result.url) {
+        onIncomingAuthUrl(result.url)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start social sign-in.')
     } finally {

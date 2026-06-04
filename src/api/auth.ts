@@ -1,5 +1,5 @@
 import Constants from 'expo-constants'
-import { apiJson, apiJsonPublic } from '@/lib/apiClient'
+import { ApiError, apiJson, apiJsonPublic } from '@/lib/apiClient'
 import { supabase, setSessionFromTokens } from '@/lib/supabase'
 import {
   AuthMeResponseSchema,
@@ -28,12 +28,8 @@ function normalizeProvider(provider: OAuthCallbackProvider): 'google' | 'microso
 
 function getCallbackRedirectUrl(path: string): string {
   const extra = getExtraConfig()
-  const host = extra.deepLinkHosts?.[0]
-  const cleanedPath = path.replace(/^\//, '')
-  if (host) {
-    return `https://${host}/${cleanedPath}`
-  }
   const scheme = extra.deepLinkScheme ?? 'bubbl'
+  const cleanedPath = path.replace(/^\//, '')
   return `${scheme}://${cleanedPath}`
 }
 
@@ -142,15 +138,18 @@ export async function ensureAuthMeWithBootstrap(
 ): Promise<AuthMeResponse> {
   try {
     return await fetchAuthMe()
-  } catch {
-    await bootstrapFromSession(roleHint, registrationType)
-    return fetchAuthMe()
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      await bootstrapFromSession(roleHint, registrationType)
+      return fetchAuthMe()
+    }
+    throw err
   }
 }
 
 export async function startOAuthFlow(args: {
   provider: OAuthCallbackProvider
-}): Promise<{ url: string }> {
+}): Promise<{ url: string; redirectTo: string }> {
   const provider = normalizeProvider(args.provider)
   const providerId = provider === 'microsoft' ? 'azure' : 'google'
   const redirectTo = getCallbackRedirectUrl(`auth/callback/${provider}`)
@@ -176,7 +175,7 @@ export async function startOAuthFlow(args: {
   })
   if (error) throw error
   if (!data?.url) throw new Error('Missing OAuth authorize URL')
-  return { url: data.url }
+  return { url: data.url, redirectTo }
 }
 
 export async function completeOAuthCallback(args: {

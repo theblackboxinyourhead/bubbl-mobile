@@ -14,6 +14,7 @@ type Props = NativeStackScreenProps<PatientStackParamList, 'PatientAuthEntry'> &
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }
 
 function normalizePhone(value: string): string {
@@ -30,6 +31,7 @@ export function PatientAuthEntryScreen({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: Props) {
   const [isSignIn, setIsSignIn] = useState(true)
   const [firstName, setFirstName] = useState('')
@@ -102,8 +104,11 @@ export function PatientAuthEntryScreen({
     try {
       await saveOAuthRoleHint('patient')
       await saveAuthOriginRoleHint('patient')
-      const { url } = await startOAuthFlow({ provider })
-      await WebBrowser.openBrowserAsync(url)
+      const { url, redirectTo } = await startOAuthFlow({ provider })
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectTo)
+      if (result.type === 'success' && result.url) {
+        onIncomingAuthUrl(result.url)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start social sign-in.')
     } finally {

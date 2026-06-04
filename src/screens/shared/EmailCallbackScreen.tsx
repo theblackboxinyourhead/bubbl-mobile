@@ -14,6 +14,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EmailCallback'> & {
 
 const CALLBACK_PATH = '/auth/callback/email'
 
+function urlIncludesCallbackPath(url: string, path: string): boolean {
+  const cleanedPath = path.replace(/^\//, '')
+  return url.includes(path) || url.includes(`://${cleanedPath}`)
+}
+
 export function EmailCallbackScreen({ route, onAuthResolved, onAuthError }: Props) {
   const [status, setStatus] = useState('Completing email verification...')
   const doneRef = useRef(false)
@@ -26,9 +31,9 @@ export function EmailCallbackScreen({ route, onAuthResolved, onAuthError }: Prop
       try {
         const initialUrl = await Linking.getInitialURL()
         const url =
-          route.params?.rawUrl && route.params.rawUrl.includes(CALLBACK_PATH)
+          route.params?.rawUrl && urlIncludesCallbackPath(route.params.rawUrl, CALLBACK_PATH)
             ? route.params.rawUrl
-            : initialUrl && initialUrl.includes(CALLBACK_PATH)
+            : initialUrl && urlIncludesCallbackPath(initialUrl, CALLBACK_PATH)
               ? initialUrl
               : null
 

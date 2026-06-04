@@ -343,6 +343,7 @@ export function PatientNavigator({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   initial?: keyof PatientStackParamList
   onBackToRoles: () => void
@@ -351,6 +352,7 @@ export function PatientNavigator({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <PatientStack.Navigator
@@ -372,6 +374,7 @@ export function PatientNavigator({
             bootstrapError={bootstrapError}
             authBootstrapLoading={authBootstrapLoading}
             onPasswordSignInAccepted={onPasswordSignInAccepted}
+            onIncomingAuthUrl={onIncomingAuthUrl}
           />
         )}
       </PatientStack.Screen>
@@ -408,6 +411,7 @@ export function ClinicianNavigator({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   initial?: keyof ClinicianStackParamList
   onBackToRoles: () => void
@@ -416,6 +420,7 @@ export function ClinicianNavigator({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <ClinicianStack.Navigator
@@ -434,6 +439,7 @@ export function ClinicianNavigator({
             bootstrapError={bootstrapError}
             authBootstrapLoading={authBootstrapLoading}
             onPasswordSignInAccepted={onPasswordSignInAccepted}
+            onIncomingAuthUrl={onIncomingAuthUrl}
           />
         )}
       </ClinicianStack.Screen>
@@ -465,6 +471,7 @@ function PatientStackHost({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   patientInitial?: keyof PatientStackParamList
   onBackToRoles: () => void
@@ -473,6 +480,7 @@ function PatientStackHost({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <PatientNavigator
@@ -483,6 +491,7 @@ function PatientStackHost({
       bootstrapError={bootstrapError}
       authBootstrapLoading={authBootstrapLoading}
       onPasswordSignInAccepted={onPasswordSignInAccepted}
+      onIncomingAuthUrl={onIncomingAuthUrl}
     />
   )
 }
@@ -495,6 +504,7 @@ function ClinicianStackHost({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   clinicianInitial?: keyof ClinicianStackParamList
   onBackToRoles: () => void
@@ -503,6 +513,7 @@ function ClinicianStackHost({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <ClinicianNavigator
@@ -513,6 +524,7 @@ function ClinicianStackHost({
       bootstrapError={bootstrapError}
       authBootstrapLoading={authBootstrapLoading}
       onPasswordSignInAccepted={onPasswordSignInAccepted}
+      onIncomingAuthUrl={onIncomingAuthUrl}
     />
   )
 }
@@ -530,6 +542,7 @@ export function RootNavigator({
   bootstrapAuthError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   mode: 'launch' | 'patient' | 'clinician'
   patientInitial?: keyof PatientStackParamList
@@ -543,6 +556,7 @@ export function RootNavigator({
   bootstrapAuthError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <RootStack.Navigator
@@ -574,6 +588,7 @@ export function RootNavigator({
               bootstrapError={bootstrapAuthError}
               authBootstrapLoading={authBootstrapLoading}
               onPasswordSignInAccepted={onPasswordSignInAccepted}
+              onIncomingAuthUrl={onIncomingAuthUrl}
             />
           )}
         </RootStack.Screen>
@@ -590,6 +605,7 @@ export function RootNavigator({
               bootstrapError={bootstrapAuthError}
               authBootstrapLoading={authBootstrapLoading}
               onPasswordSignInAccepted={onPasswordSignInAccepted}
+              onIncomingAuthUrl={onIncomingAuthUrl}
             />
           )}
         </RootStack.Screen>

@@ -15,6 +15,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PasswordResetUpdate'> &
 
 const CALLBACK_PATH = '/auth/password-flows/update-password'
 
+function urlIncludesCallbackPath(url: string, path: string): boolean {
+  const cleanedPath = path.replace(/^\//, '')
+  return url.includes(path) || url.includes(`://${cleanedPath}`)
+}
+
 export function PasswordResetUpdateScreen({ route, onAuthError, onReturnToAuth }: Props) {
   const [initializing, setInitializing] = useState(true)
   const [roleHint, setRoleHint] = useState<'patient' | 'clinician' | null>(null)
@@ -33,9 +38,9 @@ export function PasswordResetUpdateScreen({ route, onAuthError, onReturnToAuth }
       try {
         const initialUrl = await Linking.getInitialURL()
         const url =
-          route.params?.rawUrl && route.params.rawUrl.includes(CALLBACK_PATH)
+          route.params?.rawUrl && urlIncludesCallbackPath(route.params.rawUrl, CALLBACK_PATH)
             ? route.params.rawUrl
-            : initialUrl && initialUrl.includes(CALLBACK_PATH)
+            : initialUrl && urlIncludesCallbackPath(initialUrl, CALLBACK_PATH)
               ? initialUrl
               : null
         if (!url) {
