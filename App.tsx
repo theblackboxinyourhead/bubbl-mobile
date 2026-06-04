@@ -47,6 +47,7 @@ import {
 import { SessionProvider } from '@/lib/session-provider'
 import { lumina } from '@/screens/shared/lumina'
 import type { PatientStackParamList, ClinicianStackParamList } from '@/navigation/RootNavigator'
+import type { OAuthCallbackProvider } from '@/types/validation'
 /* eslint-enable import/first */
 
 const INVITE_UUID_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
@@ -121,6 +122,13 @@ export default function App() {
     | { route: 'patientPhoneVerification' }
     | { route: 'clinicianHome' }
     | { route: 'clinicianCompanyRegistration' }
+    | null
+  >(null)
+  const pendingRootRouteRef = useRef<
+    | { route: 'PasswordResetUpdate'; rawUrl: string }
+    | { route: 'EmailCallback'; rawUrl: string }
+    | { route: 'AuthCallback'; provider: OAuthCallbackProvider; rawUrl: string }
+    | { route: 'AuthCallbackError'; reason: string; roleHint: 'patient' | 'clinician' | null }
     | null
   >(null)
 
@@ -205,6 +213,7 @@ export default function App() {
   const reconcileSignedOut = useCallback(async () => {
     setAuthBootstrapLoading(false)
     pendingNav.current = null
+    pendingRootRouteRef.current = null
     const userId = currentUserIdRef.current
     if (userId) {
       await clearUserLocalState(userId).catch(() => undefined)
@@ -223,6 +232,10 @@ export default function App() {
       setReady(true)
       if (navigationRef.isReady()) {
         setTimeout(() => {
+          if (!navigationRef.isReady()) {
+            queuedUrlRef.current = pending.full
+            return
+          }
           if (pending.screeningId) {
             navigateInviteOrFallback(pending.screeningId, pending.full)
           }
@@ -398,9 +411,15 @@ export default function App() {
   }, [routeToLoggedOutPath])
 
   const shouldDeferBackgroundAuthBootstrap = useCallback(() => {
+    if (pendingRootRouteRef.current != null) {
+      return true
+    }
     const queued = queuedUrlRef.current
     if (queued && urlHasAuthCallbackPath(queued)) {
       return true
+    }
+    if (!navigationRef.isReady()) {
+      return false
     }
     const currentRoute = navigationRef.getCurrentRoute()?.name
     return currentRoute === 'AuthCallback' || currentRoute === 'EmailCallback'
@@ -424,7 +443,8 @@ export default function App() {
 
       if (urlHasAuthPasswordResetPath(url)) {
         ensureLaunchMode()
-        navigationRef.navigate('PasswordResetUpdate', { rawUrl: url })
+        pendingRootRouteRef.current = { route: 'PasswordResetUpdate', rawUrl: url }
+        setAuthFlushTick(t => t + 1)
         return
       }
       if (url.includes('screening/verify')) {
@@ -478,7 +498,13 @@ export default function App() {
           }
           enterPatientInviteLoggedOutPath()
           if (screeningId) {
-            navigateInviteOrFallback(screeningId, full)
+            setTimeout(() => {
+              if (!navigationRef.isReady()) {
+                queuedUrlRef.current = full
+                return
+              }
+              navigateInviteOrFallback(screeningId, full)
+            }, 0)
           }
         })()
         return
@@ -488,19 +514,23 @@ export default function App() {
       if (provider) {
         if (provider === 'email') {
           ensureLaunchMode()
-          navigationRef.navigate('EmailCallback', { rawUrl: url })
+          pendingRootRouteRef.current = { route: 'EmailCallback', rawUrl: url }
+          setAuthFlushTick(t => t + 1)
           return
         }
         if (provider === 'google' || provider === 'microsoft') {
           ensureLaunchMode()
-          navigationRef.navigate('AuthCallback', { provider, rawUrl: url })
+          pendingRootRouteRef.current = { route: 'AuthCallback', provider, rawUrl: url }
+          setAuthFlushTick(t => t + 1)
           return
         }
         ensureLaunchMode()
-        navigationRef.navigate('AuthCallbackError', {
+        pendingRootRouteRef.current = {
+          route: 'AuthCallbackError',
           reason: 'Unsupported authentication provider.',
           roleHint: null,
-        })
+        }
+        setAuthFlushTick(t => t + 1)
         return
       }
     },
@@ -585,6 +615,24 @@ export default function App() {
   }, [ensureLaunchMode, handleIncomingUrl, runBootstrap, shouldDeferBackgroundAuthBootstrap])
 
   const flushPendingRoutes = useCallback(() => {
+    const rootRoute = pendingRootRouteRef.current
+    if (rootRoute) {
+      if (!navigationRef.isReady()) return
+      pendingRootRouteRef.current = null
+      if (rootRoute.route === 'PasswordResetUpdate') {
+        navigationRef.navigate('PasswordResetUpdate', { rawUrl: rootRoute.rawUrl })
+      } else if (rootRoute.route === 'EmailCallback') {
+        navigationRef.navigate('EmailCallback', { rawUrl: rootRoute.rawUrl })
+      } else if (rootRoute.route === 'AuthCallback') {
+        navigationRef.navigate('AuthCallback', { provider: rootRoute.provider, rawUrl: rootRoute.rawUrl })
+      } else if (rootRoute.route === 'AuthCallbackError') {
+        navigationRef.navigate('AuthCallbackError', {
+          reason: rootRoute.reason,
+          roleHint: rootRoute.roleHint,
+        })
+      }
+      return
+    }
     const p = pendingNav.current
     if (!p || !navigationRef.isReady()) return
     pendingNav.current = null
@@ -598,11 +646,21 @@ export default function App() {
       void (async () => {
         try {
           const me = await fetchAuthMe()
+          if (!navigationRef.isReady()) {
+            pendingNav.current = { route: 'checkin' }
+            setAuthFlushTick(t => t + 1)
+            return
+          }
           const actives = (me.activeScreenings ?? []).filter(
             (s) => s.status === 'sent' || s.status === 'in review'
           )
           if (actives.length === 1) {
             const only = actives[0]
+            if (!navigationRef.isReady()) {
+              pendingNav.current = { route: 'checkin' }
+              setAuthFlushTick(t => t + 1)
+              return
+            }
             navigationRef.navigate('Patient', {
               screen: 'Intake',
               params: { screeningId: only.screeningId, source: only.source },
@@ -610,6 +668,11 @@ export default function App() {
             return
           }
           if (actives.length > 1) {
+            if (!navigationRef.isReady()) {
+              pendingNav.current = { route: 'checkin' }
+              setAuthFlushTick(t => t + 1)
+              return
+            }
             navigationRef.navigate('Patient', {
               screen: 'PatientTabs',
               params: { screen: 'PatientHome' },
@@ -619,6 +682,11 @@ export default function App() {
         } catch (error) {
           console.error('[mobile auth] failed to resolve active check-in screening', error)
           // fallback to check-in start
+        }
+        if (!navigationRef.isReady()) {
+          pendingNav.current = { route: 'checkin' }
+          setAuthFlushTick(t => t + 1)
+          return
         }
         navigationRef.navigate('Patient', { screen: 'CheckInStart' })
       })()

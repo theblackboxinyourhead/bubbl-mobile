@@ -297,6 +297,69 @@ export async function verifyPatientRegistrationOtp(args: { otpCode: string; phon
   await supabase.auth.refreshSession().catch(() => undefined)
 }
 
+export type CompanyAddressPrediction = { placeId: string; description: string }
+
+export type CompanyAddress = {
+  streetAddress: string
+  city: string
+  province: string
+  postalCode: string
+  placeId?: string
+  latitude?: number
+  longitude?: number
+  formattedAddress?: string
+}
+
+export async function fetchCompanyAddressPredictions(input: string): Promise<CompanyAddressPrediction[]> {
+  const trimmed = input.trim()
+  if (trimmed.length < 3) {
+    return []
+  }
+  const raw = await apiJson<unknown>('/api/google/places/autocomplete?input=' + encodeURIComponent(trimmed))
+  const predictions = (raw as { predictions?: unknown })?.predictions
+  if (!Array.isArray(predictions)) {
+    return []
+  }
+  return predictions.flatMap((item) => {
+    if (
+      item &&
+      typeof item === 'object' &&
+      typeof (item as { placeId?: unknown }).placeId === 'string' &&
+      typeof (item as { description?: unknown }).description === 'string'
+    ) {
+      const prediction = item as { placeId: string; description: string }
+      return [{ placeId: prediction.placeId, description: prediction.description }]
+    }
+    return []
+  })
+}
+
+export async function fetchCompanyAddressDetails(placeId: string): Promise<CompanyAddress> {
+  const trimmed = placeId.trim()
+  if (!trimmed) {
+    throw new Error('Address selection is required.')
+  }
+  const raw = await apiJson<unknown>('/api/google/places/details?placeId=' + encodeURIComponent(trimmed))
+  const address = (raw as { address?: unknown })?.address
+  if (!address || typeof address !== 'object') {
+    throw new Error('Could not load the selected address.')
+  }
+  const a = address as Record<string, unknown>
+  const streetAddress = typeof a.streetAddress === 'string' ? a.streetAddress : ''
+  const city = typeof a.city === 'string' ? a.city : ''
+  const province = typeof a.province === 'string' ? a.province : ''
+  const postalCode = typeof a.postalCode === 'string' ? a.postalCode : ''
+  if (!streetAddress || !city || !province || !postalCode) {
+    throw new Error('Could not load the selected address.')
+  }
+  const result: CompanyAddress = { streetAddress, city, province, postalCode }
+  if (typeof a.placeId === 'string') result.placeId = a.placeId
+  if (typeof a.formattedAddress === 'string') result.formattedAddress = a.formattedAddress
+  if (typeof a.latitude === 'number') result.latitude = a.latitude
+  if (typeof a.longitude === 'number') result.longitude = a.longitude
+  return result
+}
+
 export async function registerClinicianCompany(payload: {
   companyName: string
   phone: string
@@ -305,6 +368,9 @@ export async function registerClinicianCompany(payload: {
     city: string
     province: string
     postalCode: string
+    placeId?: string
+    latitude?: number
+    longitude?: number
   }
 }): Promise<void> {
   await apiJson('/api/clinicians/registration/company', {
