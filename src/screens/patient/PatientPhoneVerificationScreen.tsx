@@ -4,18 +4,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { updatePatientPhone, verifyPatientRegistrationOtp } from '@/api/auth'
 import { supabase } from '@/lib/supabase'
+import { formatTenDigitPhoneToE164, formatTenDigitPhoneWhileTyping } from '@/lib/phone'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientPhoneVerification'> & {
   onResolved: () => Promise<void> | void
-}
-
-function normalizePhone(value: string): string {
-  const digits = value.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  if (value.startsWith('+')) return value
-  return `+${digits}`
 }
 
 export function PatientPhoneVerificationScreen({ onResolved }: Props) {
@@ -27,13 +20,14 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
   const [sentTo, setSentTo] = useState<string | null>(null)
 
   const sendOtp = async () => {
+    const normalized = formatTenDigitPhoneToE164(phone)
+    if (!normalized) {
+      setError('Enter a valid 10-digit phone number.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      const normalized = normalizePhone(phone.trim())
-      if (!normalized || normalized.length < 12) {
-        throw new Error('Valid phone number required.')
-      }
       const user = (await supabase.auth.getUser()).data.user
       const registrationType = user?.user_metadata?.registrationType === 'sso' ? 'sso' : 'email'
       await updatePatientPhone(normalized, registrationType)
@@ -45,7 +39,7 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
         },
       })
       if (updateError) throw updateError
-      setSentTo(normalized)
+      setSentTo(phone)
       setStep('otp')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send verification code.')
@@ -55,10 +49,14 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
   }
 
   const verify = async () => {
+    const normalized = formatTenDigitPhoneToE164(phone)
+    if (!normalized) {
+      setError('Enter a valid 10-digit phone number.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      const normalized = normalizePhone(phone.trim())
       await verifyPatientRegistrationOtp({ otpCode, phone: normalized })
       await onResolved()
     } catch (e) {
@@ -86,14 +84,14 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
               style={luminaStyles.input}
               keyboardType="phone-pad"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(value) => setPhone(formatTenDigitPhoneWhileTyping(value))}
               placeholder="(555) 123-4567"
               placeholderTextColor={lumina.onSurfaceVariant}
             />
             <Pressable
               style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
               onPress={() => void sendOtp()}
-              disabled={busy}
+              disabled={busy || formatTenDigitPhoneToE164(phone) === null}
             >
               {busy ? (
                 <ActivityIndicator color={lumina.onPrimary} />

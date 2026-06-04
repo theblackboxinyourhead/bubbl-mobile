@@ -8,6 +8,7 @@ import { SocialAuthButtons } from '@/screens/shared/SocialAuthButtons'
 import { lumina, luminaStyles } from '@/screens/shared/lumina'
 import { signInWithPassword, signUpPatientWithEmail, startOAuthFlow } from '@/api/auth'
 import { saveAuthOriginRoleHint, saveOAuthRoleHint } from '@/lib/storage'
+import { formatTenDigitPhoneToE164, formatTenDigitPhoneWhileTyping } from '@/lib/phone'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientAuthEntry'> & {
   onBackToRoles: () => void
@@ -15,14 +16,6 @@ type Props = NativeStackScreenProps<PatientStackParamList, 'PatientAuthEntry'> &
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
   onIncomingAuthUrl: (url: string) => void
-}
-
-function normalizePhone(value: string): string {
-  const digits = value.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  if (value.startsWith('+')) return value
-  return `+${digits}`
 }
 
 export function PatientAuthEntryScreen({
@@ -79,9 +72,9 @@ export function PatientAuthEntryScreen({
       if (password !== confirmPassword) {
         throw new Error('Passwords do not match.')
       }
-      const normalizedPhone = normalizePhone(phoneNumber.trim())
-      if (!normalizedPhone || normalizedPhone.length < 12) {
-        throw new Error('A valid phone number is required.')
+      const normalizedPhone = formatTenDigitPhoneToE164(phoneNumber)
+      if (!normalizedPhone) {
+        throw new Error('Enter a valid 10-digit phone number.')
       }
       await signUpPatientWithEmail({
         firstName: firstName.trim(),
@@ -207,7 +200,7 @@ export function PatientAuthEntryScreen({
               <TextInput
                 style={luminaStyles.input}
                 value={phoneNumber}
-                onChangeText={setPhoneNumber}
+                onChangeText={(value) => setPhoneNumber(formatTenDigitPhoneWhileTyping(value))}
                 keyboardType="phone-pad"
                 placeholder="(555) 123-4567"
                 placeholderTextColor={lumina.onSurfaceVariant}
