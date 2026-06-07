@@ -1,21 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { updatePatientPhone, verifyPatientRegistrationOtp } from '@/api/auth'
 import { supabase } from '@/lib/supabase'
+import { formatTenDigitPhoneToE164, formatTenDigitPhoneWhileTyping } from '@/lib/phone'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientPhoneVerification'> & {
   onResolved: () => Promise<void> | void
-}
-
-function normalizePhone(value: string): string {
-  const digits = value.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  if (value.startsWith('+')) return value
-  return `+${digits}`
 }
 
 export function PatientPhoneVerificationScreen({ onResolved }: Props) {
@@ -25,15 +18,24 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sentTo, setSentTo] = useState<string | null>(null)
+  const [resendIn, setResendIn] = useState(0)
+  const otpInputRef = useRef<TextInput | null>(null)
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const timer = setTimeout(() => setResendIn((prev) => prev - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [resendIn])
 
   const sendOtp = async () => {
+    const normalized = formatTenDigitPhoneToE164(phone)
+    if (!normalized) {
+      setError('Enter a valid 10-digit phone number.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      const normalized = normalizePhone(phone.trim())
-      if (!normalized || normalized.length < 12) {
-        throw new Error('Valid phone number required.')
-      }
       const user = (await supabase.auth.getUser()).data.user
       const registrationType = user?.user_metadata?.registrationType === 'sso' ? 'sso' : 'email'
       await updatePatientPhone(normalized, registrationType)
@@ -45,8 +47,9 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
         },
       })
       if (updateError) throw updateError
-      setSentTo(normalized)
+      setSentTo(phone)
       setStep('otp')
+      setResendIn(60)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send verification code.')
     } finally {
@@ -55,10 +58,14 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
   }
 
   const verify = async () => {
+    const normalized = formatTenDigitPhoneToE164(phone)
+    if (!normalized) {
+      setError('Enter a valid 10-digit phone number.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      const normalized = normalizePhone(phone.trim())
       await verifyPatientRegistrationOtp({ otpCode, phone: normalized })
       await onResolved()
     } catch (e) {
@@ -71,6 +78,7 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
   return (
     <View style={styles.screen}>
       <View style={luminaStyles.stage}>
+        <Text style={luminaStyles.eyebrow}>{step === 'phone' ? 'Step 1/2' : 'Step 2/2'}</Text>
         <Text style={styles.title}>Phone verification</Text>
         <Text style={styles.body}>
           {step === 'phone'
@@ -86,44 +94,97 @@ export function PatientPhoneVerificationScreen({ onResolved }: Props) {
               style={luminaStyles.input}
               keyboardType="phone-pad"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(value) => setPhone(formatTenDigitPhoneWhileTyping(value))}
               placeholder="(555) 123-4567"
-              placeholderTextColor={lumina.onSurfaceVariant}
+              placeholderTextColor={lumina.outline}
             />
             <Pressable
-              style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+              style={({ pressed }) => [
+                luminaStyles.primaryButton,
+                pressed && luminaStyles.pressedButton,
+                (busy || formatTenDigitPhoneToE164(phone) === null) && luminaStyles.buttonDisabledTonal,
+              ]}
               onPress={() => void sendOtp()}
-              disabled={busy}
+              disabled={busy || formatTenDigitPhoneToE164(phone) === null}
             >
               {busy ? (
                 <ActivityIndicator color={lumina.onPrimary} />
               ) : (
-                <Text style={luminaStyles.primaryButtonText}>Send code</Text>
+                <Text
+                  style={[
+                    luminaStyles.primaryButtonText,
+                    (busy || formatTenDigitPhoneToE164(phone) === null) &&
+                      luminaStyles.buttonDisabledTonalText,
+                  ]}
+                >
+                  Send code
+                </Text>
               )}
             </Pressable>
           </>
         ) : (
           <>
             <Text style={luminaStyles.label}>Verification code</Text>
-            <TextInput
-              style={luminaStyles.input}
-              keyboardType="number-pad"
-              value={otpCode}
-              onChangeText={setOtpCode}
-              maxLength={6}
-              placeholder="6-digit code"
-              placeholderTextColor={lumina.onSurfaceVariant}
-            />
+            <View style={[luminaStyles.card, styles.otpCard]}>
+              <Pressable style={styles.otpRow} onPress={() => otpInputRef.current?.focus()}>
+                {Array.from({ length: 6 }).map((_, idx) => {
+                  const active = otpCode.length === idx
+                  const filled = idx < otpCode.length
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.otpCell,
+                        filled && styles.otpCellFilled,
+                        active && styles.otpCellActive,
+                        idx === 3 && styles.otpCellSplit,
+                      ]}
+                    >
+                      <Text style={styles.otpDigit}>{otpCode[idx] ?? ''}</Text>
+                    </View>
+                  )
+                })}
+              </Pressable>
+              <TextInput
+                ref={otpInputRef}
+                style={styles.hiddenInput}
+                keyboardType="number-pad"
+                value={otpCode}
+                onChangeText={(next) => setOtpCode(next.replace(/\D/g, '').slice(0, 6))}
+                maxLength={6}
+                textContentType="oneTimeCode"
+              />
+            </View>
             <Pressable
-              style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+              style={({ pressed }) => [
+                luminaStyles.primaryButton,
+                pressed && luminaStyles.pressedButton,
+                (busy || otpCode.length !== 6) && luminaStyles.buttonDisabledTonal,
+              ]}
               onPress={() => void verify()}
               disabled={busy || otpCode.length !== 6}
             >
               {busy ? (
                 <ActivityIndicator color={lumina.onPrimary} />
               ) : (
-                <Text style={luminaStyles.primaryButtonText}>Verify code</Text>
+                <Text
+                  style={[
+                    luminaStyles.primaryButtonText,
+                    (busy || otpCode.length !== 6) && luminaStyles.buttonDisabledTonalText,
+                  ]}
+                >
+                  Verify code
+                </Text>
               )}
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [luminaStyles.primaryOutlineButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void sendOtp()}
+              disabled={busy || resendIn > 0}
+            >
+              <Text style={luminaStyles.primaryOutlineButtonText}>
+                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+              </Text>
             </Pressable>
           </>
         )}
@@ -140,7 +201,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: lumina.onSurface,
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: luminaFonts.display,
   },
   body: {
@@ -149,5 +210,45 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 4,
     fontFamily: luminaFonts.body,
+  },
+  otpCard: {
+    padding: 14,
+    gap: 0,
+  },
+  otpRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  otpCell: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  otpCellSplit: {
+    marginLeft: 10,
+  },
+  otpCellFilled: {
+    backgroundColor: lumina.secondaryContainer,
+  },
+  otpCellActive: {
+    borderWidth: 2,
+    borderColor: lumina.primaryFixed,
+  },
+  otpDigit: {
+    color: lumina.onSurface,
+    fontSize: 24,
+    fontFamily: luminaFonts.display,
+  },
+  hiddenInput: {
+    height: 0,
+    width: 0,
+    opacity: 0,
+    position: 'absolute',
   },
 })

@@ -11,7 +11,8 @@ if (__DEV__) { require('./src/devtools/reactotron') }
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
-import { AppState, View, ActivityIndicator, StyleSheet, type AppStateStatus } from 'react-native'
+import { AppState, View, Text, ActivityIndicator, StyleSheet, type AppStateStatus } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { NavigationContainer } from '@react-navigation/native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -25,7 +26,7 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans'
 import { supabase } from '@/lib/supabase'
 import { ApiError } from '@/lib/apiClient'
-import { fetchAuthMe } from '@/api/auth'
+import { ensureAuthMeWithBootstrap, fetchAuthMe } from '@/api/auth'
 import { RootNavigator } from '@/navigation/RootNavigator'
 import { linking } from '@/navigation/linking'
 import { navigationRef, navigateInviteOrFallback } from '@/navigation/navigationRef'
@@ -35,6 +36,7 @@ import {
   clearUserLocalState,
   loadActiveScreeningContext,
   loadAuthOriginRoleHint,
+  loadOAuthRoleHint,
   saveActiveScreeningContext,
 } from '@/lib/storage'
 import { fetchScreeningPatient } from '@/api/screenings'
@@ -46,6 +48,7 @@ import {
 import { SessionProvider } from '@/lib/session-provider'
 import { lumina } from '@/screens/shared/lumina'
 import type { PatientStackParamList, ClinicianStackParamList } from '@/navigation/RootNavigator'
+import type { OAuthCallbackProvider } from '@/types/validation'
 /* eslint-enable import/first */
 
 const INVITE_UUID_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
@@ -67,6 +70,26 @@ function parseInviteScreeningUuid(value: string | null): string | null {
 }
 
 type LoggedOutPath = 'launchChoice' | 'patientAuth' | 'patientInvite' | 'clinicianAuth'
+
+function urlHasAuthPasswordResetPath(url: string): boolean {
+  return (
+    url.includes('/auth/password-flows/update-password') ||
+    url.includes('://auth/password-flows/update-password')
+  )
+}
+
+function matchAuthCallbackProvider(url: string): string | null {
+  const m = url.match(/(?:\/|:\/\/)(auth\/callback\/([a-z0-9_-]+))/i)
+  return m?.[2]?.toLowerCase() ?? null
+}
+
+function urlHasAuthCallbackPath(url: string): boolean {
+  return (
+    matchAuthCallbackProvider(url) != null ||
+    url.includes('/auth/callback/email') ||
+    url.includes('://auth/callback/email')
+  )
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -100,6 +123,13 @@ export default function App() {
     | { route: 'patientPhoneVerification' }
     | { route: 'clinicianHome' }
     | { route: 'clinicianCompanyRegistration' }
+    | null
+  >(null)
+  const pendingRootRouteRef = useRef<
+    | { route: 'PasswordResetUpdate'; rawUrl: string }
+    | { route: 'EmailCallback'; rawUrl: string }
+    | { route: 'AuthCallback'; provider: OAuthCallbackProvider; rawUrl: string }
+    | { route: 'AuthCallbackError'; reason: string; roleHint: 'patient' | 'clinician' | null }
     | null
   >(null)
 
@@ -184,6 +214,7 @@ export default function App() {
   const reconcileSignedOut = useCallback(async () => {
     setAuthBootstrapLoading(false)
     pendingNav.current = null
+    pendingRootRouteRef.current = null
     const userId = currentUserIdRef.current
     if (userId) {
       await clearUserLocalState(userId).catch(() => undefined)
@@ -202,6 +233,10 @@ export default function App() {
       setReady(true)
       if (navigationRef.isReady()) {
         setTimeout(() => {
+          if (!navigationRef.isReady()) {
+            queuedUrlRef.current = pending.full
+            return
+          }
           if (pending.screeningId) {
             navigateInviteOrFallback(pending.screeningId, pending.full)
           }
@@ -256,7 +291,11 @@ export default function App() {
 
       try {
         setBootstrapError(null)
-        const me = await fetchAuthMe()
+        const oauthRoleHint = await loadOAuthRoleHint().catch(() => null)
+        const originRoleHint = await loadAuthOriginRoleHint().catch(() => null)
+        const roleHint = oauthRoleHint ?? originRoleHint
+        const registrationType = oauthRoleHint ? 'sso' : 'email'
+        const me = await ensureAuthMeWithBootstrap(roleHint, registrationType)
         if (__DEV__) console.log('[mobile auth] fetchAuthMe: user_type =', me.user.user_type, 'companyId =', !!(me.user as Record<string, unknown>).companyId)
         currentUserIdRef.current = me.user.id
 
@@ -372,6 +411,21 @@ export default function App() {
     await task
   }, [routeToLoggedOutPath])
 
+  const shouldDeferBackgroundAuthBootstrap = useCallback(() => {
+    if (pendingRootRouteRef.current != null) {
+      return true
+    }
+    const queued = queuedUrlRef.current
+    if (queued && urlHasAuthCallbackPath(queued)) {
+      return true
+    }
+    if (!navigationRef.isReady()) {
+      return false
+    }
+    const currentRoute = navigationRef.getCurrentRoute()?.name
+    return currentRoute === 'AuthCallback' || currentRoute === 'EmailCallback'
+  }, [])
+
   const handlePasswordSignInAccepted = useCallback(() => {
     setAuthBootstrapLoading(true)
     void runBootstrap()
@@ -388,9 +442,10 @@ export default function App() {
         return
       }
 
-      if (url.includes('/auth/password-flows/update-password')) {
+      if (urlHasAuthPasswordResetPath(url)) {
         ensureLaunchMode()
-        navigationRef.navigate('PasswordResetUpdate', { rawUrl: url })
+        pendingRootRouteRef.current = { route: 'PasswordResetUpdate', rawUrl: url }
+        setAuthFlushTick(t => t + 1)
         return
       }
       if (url.includes('screening/verify')) {
@@ -444,30 +499,39 @@ export default function App() {
           }
           enterPatientInviteLoggedOutPath()
           if (screeningId) {
-            navigateInviteOrFallback(screeningId, full)
+            setTimeout(() => {
+              if (!navigationRef.isReady()) {
+                queuedUrlRef.current = full
+                return
+              }
+              navigateInviteOrFallback(screeningId, full)
+            }, 0)
           }
         })()
         return
       }
 
-      const callbackMatch = url.match(/\/auth\/callback\/([a-z0-9_-]+)/i)
-      if (callbackMatch) {
-        const provider = callbackMatch[1].toLowerCase()
+      const provider = matchAuthCallbackProvider(url)
+      if (provider) {
         if (provider === 'email') {
           ensureLaunchMode()
-          navigationRef.navigate('EmailCallback', { rawUrl: url })
+          pendingRootRouteRef.current = { route: 'EmailCallback', rawUrl: url }
+          setAuthFlushTick(t => t + 1)
           return
         }
         if (provider === 'google' || provider === 'microsoft') {
           ensureLaunchMode()
-          navigationRef.navigate('AuthCallback', { provider, rawUrl: url })
+          pendingRootRouteRef.current = { route: 'AuthCallback', provider, rawUrl: url }
+          setAuthFlushTick(t => t + 1)
           return
         }
         ensureLaunchMode()
-        navigationRef.navigate('AuthCallbackError', {
+        pendingRootRouteRef.current = {
+          route: 'AuthCallbackError',
           reason: 'Unsupported authentication provider.',
           roleHint: null,
-        })
+        }
+        setAuthFlushTick(t => t + 1)
         return
       }
     },
@@ -482,13 +546,14 @@ export default function App() {
         return
       }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (shouldDeferBackgroundAuthBootstrap()) return
         void runBootstrap()
       }
     })
     return () => {
       subAuth.data.subscription.unsubscribe()
     }
-  }, [reconcileSignedOut, runBootstrap])
+  }, [reconcileSignedOut, runBootstrap, shouldDeferBackgroundAuthBootstrap])
 
   useEffect(() => {
     const notifSub = Notifications.addNotificationResponseReceivedListener(
@@ -523,10 +588,12 @@ export default function App() {
       const initialUrl = await Linking.getInitialURL()
       if (initialUrl?.includes('screening/verify')) {
         queuedUrlRef.current = initialUrl
-      } else if (
-        initialUrl?.includes('/auth/callback/') ||
-        initialUrl?.includes('/auth/password-flows/update-password')
-      ) {
+      } else if (initialUrl != null && urlHasAuthCallbackPath(initialUrl)) {
+        ensureLaunchMode()
+        queuedUrlRef.current = initialUrl
+        setReady(true)
+        return
+      } else if (initialUrl != null && urlHasAuthPasswordResetPath(initialUrl)) {
         ensureLaunchMode()
         queuedUrlRef.current = initialUrl
       }
@@ -535,7 +602,7 @@ export default function App() {
 
     const appSub = AppState.addEventListener('change', (s: AppStateStatus) => {
       setAppState(s)
-      if (s === 'active') void runBootstrap()
+      if (s === 'active' && !shouldDeferBackgroundAuthBootstrap()) void runBootstrap()
     })
 
     const linkSub = Linking.addEventListener('url', ({ url }) => {
@@ -546,20 +613,29 @@ export default function App() {
       appSub.remove()
       linkSub.remove()
     }
-  }, [ensureLaunchMode, handleIncomingUrl, runBootstrap])
+  }, [ensureLaunchMode, handleIncomingUrl, runBootstrap, shouldDeferBackgroundAuthBootstrap])
 
   const flushPendingRoutes = useCallback(() => {
+    const rootRoute = pendingRootRouteRef.current
+    if (rootRoute) {
+      if (!navigationRef.isReady()) return
+      pendingRootRouteRef.current = null
+      if (rootRoute.route === 'PasswordResetUpdate') {
+        navigationRef.navigate('PasswordResetUpdate', { rawUrl: rootRoute.rawUrl })
+      } else if (rootRoute.route === 'EmailCallback') {
+        navigationRef.navigate('EmailCallback', { rawUrl: rootRoute.rawUrl })
+      } else if (rootRoute.route === 'AuthCallback') {
+        navigationRef.navigate('AuthCallback', { provider: rootRoute.provider, rawUrl: rootRoute.rawUrl })
+      } else if (rootRoute.route === 'AuthCallbackError') {
+        navigationRef.navigate('AuthCallbackError', {
+          reason: rootRoute.reason,
+          roleHint: rootRoute.roleHint,
+        })
+      }
+      return
+    }
     const p = pendingNav.current
     if (!p || !navigationRef.isReady()) return
-    const navRoutes = navigationRef.getState()?.routes ?? []
-    if (
-      (p.route === 'patientHome' || p.route === 'patientPhoneVerification' || p.route === 'intake' || p.route === 'checkin') &&
-      !navRoutes.some(r => r.name === 'Patient')
-    ) return
-    if (
-      (p.route === 'clinicianHome' || p.route === 'clinicianCompanyRegistration') &&
-      !navRoutes.some(r => r.name === 'Clinician')
-    ) return
     pendingNav.current = null
     setAuthBootstrapLoading(false)
     if (p.route === 'detail') {
@@ -571,11 +647,21 @@ export default function App() {
       void (async () => {
         try {
           const me = await fetchAuthMe()
+          if (!navigationRef.isReady()) {
+            pendingNav.current = { route: 'checkin' }
+            setAuthFlushTick(t => t + 1)
+            return
+          }
           const actives = (me.activeScreenings ?? []).filter(
             (s) => s.status === 'sent' || s.status === 'in review'
           )
           if (actives.length === 1) {
             const only = actives[0]
+            if (!navigationRef.isReady()) {
+              pendingNav.current = { route: 'checkin' }
+              setAuthFlushTick(t => t + 1)
+              return
+            }
             navigationRef.navigate('Patient', {
               screen: 'Intake',
               params: { screeningId: only.screeningId, source: only.source },
@@ -583,6 +669,11 @@ export default function App() {
             return
           }
           if (actives.length > 1) {
+            if (!navigationRef.isReady()) {
+              pendingNav.current = { route: 'checkin' }
+              setAuthFlushTick(t => t + 1)
+              return
+            }
             navigationRef.navigate('Patient', {
               screen: 'PatientTabs',
               params: { screen: 'PatientHome' },
@@ -592,6 +683,11 @@ export default function App() {
         } catch (error) {
           console.error('[mobile auth] failed to resolve active check-in screening', error)
           // fallback to check-in start
+        }
+        if (!navigationRef.isReady()) {
+          pendingNav.current = { route: 'checkin' }
+          setAuthFlushTick(t => t + 1)
+          return
         }
         navigationRef.navigate('Patient', { screen: 'CheckInStart' })
       })()
@@ -619,7 +715,8 @@ export default function App() {
   if (!fontsLoaded || !ready) {
     return (
       <View style={styles.boot}>
-        <ActivityIndicator size="large" />
+        <Text style={styles.bootMark}>Bubbl</Text>
+        <ActivityIndicator size="large" color={lumina.primary} />
       </View>
     )
   }
@@ -658,10 +755,17 @@ export default function App() {
                 bootstrapAuthError={bootstrapError}
                 authBootstrapLoading={authBootstrapLoading}
                 onPasswordSignInAccepted={handlePasswordSignInAccepted}
+                onIncomingAuthUrl={handleIncomingUrl}
               />
               <StatusBar style="dark" />
             </NavigationContainer>
-            {appState !== 'active' ? <View style={styles.privacyOverlay} /> : null}
+            {appState !== 'active' ? (
+              <View style={styles.privacyOverlay}>
+                <Ionicons name="lock-closed" size={28} color={lumina.primaryFixed} />
+                <Text style={styles.privacyMark}>Bubbl</Text>
+                <Text style={styles.privacyNote}>Protected</Text>
+              </View>
+            ) : null}
           </View>
         </SessionProvider>
       </SafeAreaProvider>
@@ -671,11 +775,39 @@ export default function App() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  boot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  boot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    backgroundColor: lumina.surface,
+  },
+  bootMark: {
+    color: lumina.primary,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
   privacyOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: lumina.onSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     zIndex: 99999,
     elevation: 99999,
+  },
+  privacyMark: {
+    color: lumina.onPrimary,
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  privacyNote: {
+    color: lumina.primaryFixed,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 })

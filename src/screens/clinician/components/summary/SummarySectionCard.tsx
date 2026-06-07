@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { lumina } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Tone = 'default' | 'accent'
 type Density = 'default' | 'compact' | 'hero'
@@ -32,14 +32,19 @@ export function SummarySectionCard({
   return (
     <View
       style={[
+        isHero ? luminaStyles.accentCard : luminaStyles.card,
         styles.card,
         density === 'compact' && styles.cardCompact,
         density === 'hero' && styles.cardHero,
       ]}
     >
-      <View style={[styles.header, isHero && styles.headerHero]}>
+      <View style={styles.header}>
         <View style={styles.titleGroup}>
-          {icon ? <Ionicons name={icon} size={16} color={iconColor} /> : null}
+          {icon ? (
+            <View style={styles.iconMedallion}>
+              <Ionicons name={icon} size={16} color={iconColor} />
+            </View>
+          ) : null}
           <Text style={styles.title}>{title}</Text>
         </View>
         {headerAccessory ? <View style={styles.headerAccessory}>{headerAccessory}</View> : null}
@@ -52,11 +57,8 @@ export function SummarySectionCard({
 }
 
 const styles = StyleSheet.create({
+  /** Geometry/elevation come from luminaStyles.card / accentCard (Tier-1/Tier-2). */
   card: {
-    borderRadius: 24,
-    backgroundColor: lumina.surfaceLowest,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
     gap: 12,
   },
   cardCompact: {
@@ -73,17 +75,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  headerHero: {
-    backgroundColor: lumina.primaryContainer,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
   titleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     flexShrink: 1,
+  },
+  iconMedallion: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: lumina.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerAccessory: {
     marginLeft: 'auto',
@@ -91,7 +95,7 @@ const styles = StyleSheet.create({
   title: {
     color: lumina.onSurface,
     fontSize: 20,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
     letterSpacing: -0.2,
     flexShrink: 1,
   },

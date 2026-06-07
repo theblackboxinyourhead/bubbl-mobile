@@ -1,27 +1,22 @@
 import { useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, TextInput, View, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import * as WebBrowser from 'expo-web-browser'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { AuthShell } from '@/screens/shared/AuthShell'
 import { SocialAuthButtons } from '@/screens/shared/SocialAuthButtons'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { signInWithPassword, signUpPatientWithEmail, startOAuthFlow } from '@/api/auth'
 import { saveAuthOriginRoleHint, saveOAuthRoleHint } from '@/lib/storage'
+import { formatTenDigitPhoneToE164, formatTenDigitPhoneWhileTyping } from '@/lib/phone'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'PatientAuthEntry'> & {
   onBackToRoles: () => void
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
-}
-
-function normalizePhone(value: string): string {
-  const digits = value.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  if (value.startsWith('+')) return value
-  return `+${digits}`
+  onIncomingAuthUrl: (url: string) => void
 }
 
 export function PatientAuthEntryScreen({
@@ -30,6 +25,7 @@ export function PatientAuthEntryScreen({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: Props) {
   const [isSignIn, setIsSignIn] = useState(true)
   const [firstName, setFirstName] = useState('')
@@ -43,6 +39,7 @@ export function PatientAuthEntryScreen({
   const [busyProvider, setBusyProvider] = useState<'google' | 'microsoft' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
+  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   const subtitle = useMemo(
     () =>
@@ -77,9 +74,9 @@ export function PatientAuthEntryScreen({
       if (password !== confirmPassword) {
         throw new Error('Passwords do not match.')
       }
-      const normalizedPhone = normalizePhone(phoneNumber.trim())
-      if (!normalizedPhone || normalizedPhone.length < 12) {
-        throw new Error('A valid phone number is required.')
+      const normalizedPhone = formatTenDigitPhoneToE164(phoneNumber)
+      if (!normalizedPhone) {
+        throw new Error('Enter a valid 10-digit phone number.')
       }
       await signUpPatientWithEmail({
         firstName: firstName.trim(),
@@ -102,8 +99,11 @@ export function PatientAuthEntryScreen({
     try {
       await saveOAuthRoleHint('patient')
       await saveAuthOriginRoleHint('patient')
-      const { url } = await startOAuthFlow({ provider })
-      await WebBrowser.openBrowserAsync(url)
+      const { url, redirectTo } = await startOAuthFlow({ provider })
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectTo)
+      if (result.type === 'success' && result.url) {
+        onIncomingAuthUrl(result.url)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start social sign-in.')
     } finally {
@@ -113,6 +113,7 @@ export function PatientAuthEntryScreen({
 
   const loading = busy || busyProvider !== null || authBootstrapLoading
   const passwordSubmitLoading = busy || authBootstrapLoading
+
 
   const navigatePasswordReset = () => {
     const parent = navigation.getParent()
@@ -133,7 +134,7 @@ export function PatientAuthEntryScreen({
         setEmailSent(false)
         setIsSignIn((prev) => !prev)
       }}
-      loading={loading}
+      loading={passwordSubmitLoading}
       error={error ?? bootstrapError ?? null}
       socialSlot={
         <SocialAuthButtons
@@ -149,66 +150,92 @@ export function PatientAuthEntryScreen({
             <>
               <Text style={luminaStyles.label}>First name</Text>
               <TextInput
-                style={luminaStyles.input}
+                style={[luminaStyles.input, focusedField === 'firstName' && luminaStyles.inputFocused]}
                 value={firstName}
                 onChangeText={setFirstName}
+                onFocus={() => setFocusedField('firstName')}
+                onBlur={() => setFocusedField(null)}
                 placeholder="First name"
-                placeholderTextColor={lumina.onSurfaceVariant}
+                placeholderTextColor={lumina.outline}
               />
               <Text style={luminaStyles.label}>Last name</Text>
               <TextInput
-                style={luminaStyles.input}
+                style={[luminaStyles.input, focusedField === 'lastName' && luminaStyles.inputFocused]}
                 value={lastName}
                 onChangeText={setLastName}
+                onFocus={() => setFocusedField('lastName')}
+                onBlur={() => setFocusedField(null)}
                 placeholder="Last name"
-                placeholderTextColor={lumina.onSurfaceVariant}
+                placeholderTextColor={lumina.outline}
               />
             </>
           ) : null}
 
           <Text style={luminaStyles.label}>Email</Text>
-          <TextInput
-            testID="patient-auth-identifier-input"
-            style={luminaStyles.input}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="name@example.com"
-            placeholderTextColor={lumina.onSurfaceVariant}
-          />
+          <View style={[styles.iconField, focusedField === 'email' && luminaStyles.inputFocused]}>
+            <Ionicons name="mail-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+            <TextInput
+              testID="patient-auth-identifier-input"
+              style={styles.iconFieldInput}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              onFocus={() => setFocusedField('email')}
+              onBlur={() => setFocusedField(null)}
+              placeholder="name@example.com"
+              placeholderTextColor={lumina.outline}
+            />
+          </View>
           <Text style={luminaStyles.label}>Password</Text>
-          <TextInput
-            testID="patient-auth-password-input"
-            style={luminaStyles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder={isSignIn ? 'Password' : 'Create password'}
-            placeholderTextColor={lumina.onSurfaceVariant}
-          />
+          <View style={[styles.iconField, focusedField === 'password' && luminaStyles.inputFocused]}>
+            <Ionicons name="lock-closed-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+            <TextInput
+              testID="patient-auth-password-input"
+              style={styles.iconFieldInput}
+              value={password}
+              onChangeText={setPassword}
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+              secureTextEntry
+              placeholder={isSignIn ? 'Password' : 'Create password'}
+              placeholderTextColor={lumina.outline}
+            />
+          </View>
           {!isSignIn ? (
             <>
               <Text style={luminaStyles.label}>Confirm password</Text>
-              <TextInput
-                style={luminaStyles.input}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                placeholder="Confirm password"
-                placeholderTextColor={lumina.onSurfaceVariant}
-              />
+              <View style={[styles.iconField, focusedField === 'confirmPassword' && luminaStyles.inputFocused]}>
+                <Ionicons name="lock-closed-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+                <TextInput
+                  style={styles.iconFieldInput}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  onFocus={() => setFocusedField('confirmPassword')}
+                  onBlur={() => setFocusedField(null)}
+                  secureTextEntry
+                  placeholder="Confirm password"
+                  placeholderTextColor={lumina.outline}
+                />
+              </View>
               <Text style={luminaStyles.label}>Phone number</Text>
-              <TextInput
-                style={luminaStyles.input}
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-                keyboardType="phone-pad"
-                placeholder="(555) 123-4567"
-                placeholderTextColor={lumina.onSurfaceVariant}
-              />
+              <View style={[styles.iconField, focusedField === 'phone' && luminaStyles.inputFocused]}>
+                <Ionicons name="call-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+                <TextInput
+                  style={styles.iconFieldInput}
+                  value={phoneNumber}
+                  onChangeText={(value) => setPhoneNumber(formatTenDigitPhoneWhileTyping(value))}
+                  onFocus={() => setFocusedField('phone')}
+                  onBlur={() => setFocusedField(null)}
+                  keyboardType="phone-pad"
+                  placeholder="(555) 123-4567"
+                  placeholderTextColor={lumina.outline}
+                />
+              </View>
               <Pressable style={styles.checkboxRow} onPress={() => setAgreeToTerms((prev) => !prev)}>
-                <View style={[styles.checkbox, agreeToTerms ? styles.checkboxOn : undefined]} />
+                <View style={[styles.checkbox, agreeToTerms ? styles.checkboxOn : undefined]}>
+                  {agreeToTerms ? <Ionicons name="checkmark" size={14} color={lumina.onPrimary} /> : null}
+                </View>
                 <Text style={styles.checkboxText}>I accept terms of service.</Text>
               </Pressable>
             </>
@@ -222,15 +249,15 @@ export function PatientAuthEntryScreen({
             testID="patient-auth-continue-button"
             style={[
               luminaStyles.primaryButton,
-              loading && luminaStyles.primaryButtonDisabled,
+              loading && luminaStyles.buttonDisabledTonal,
             ]}
             onPress={() => void runEmailFlow()}
             disabled={loading}
           >
             {passwordSubmitLoading ? (
-              <ActivityIndicator color={lumina.onPrimary} />
+              <ActivityIndicator color={lumina.onSurfaceVariant} />
             ) : (
-              <Text style={luminaStyles.primaryButtonText}>{isSignIn ? 'Sign in' : 'Create account'}</Text>
+              <Text style={[luminaStyles.primaryButtonText, loading && luminaStyles.buttonDisabledTonalText]}>{isSignIn ? 'Sign in' : 'Create account'}</Text>
             )}
           </Pressable>
 
@@ -258,16 +285,40 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   checkbox: {
-    width: 18,
-    height: 18,
+    width: 22,
+    height: 22,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     backgroundColor: lumina.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   checkboxOn: {
     backgroundColor: lumina.primary,
+    borderColor: lumina.primary,
   },
   checkboxText: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
+    fontFamily: luminaFonts.body,
+  },
+  iconField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    paddingHorizontal: 12,
+  },
+  iconFieldIcon: {
+    marginRight: 8,
+  },
+  iconFieldInput: {
+    flex: 1,
+    paddingVertical: 12,
+    color: lumina.onSurface,
+    fontFamily: luminaFonts.body,
   },
 })

@@ -35,8 +35,6 @@ appId: com.bubbl.mobile.dev
 - tapOn:
     text: History
 - assertVisible:
-    text: Screening history
-- assertVisible:
     id: clinician-patient-profile-screening-${E2E_CLINICIAN_QUEUE_SCREENING_ID}
 - tapOn:
     id: clinician-patient-profile-screening-${E2E_CLINICIAN_QUEUE_SCREENING_ID}

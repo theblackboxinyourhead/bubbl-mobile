@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native'
-import { lumina, luminaFonts } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { SummaryBadge, type SummaryBadgeTone } from './SummaryBadge'
 import { SummaryDataRow } from './SummaryDataRow'
 import { SummaryEmptyState } from './SummaryEmptyState'
@@ -320,6 +320,54 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
   return (
     <View style={styles.stack}>
       <SummarySectionCard
+        title="AI Assessment"
+        density="hero"
+        tone="accent"
+        icon="sparkles-outline"
+      >
+        {assessmentSummary ? (
+          <View style={styles.assessmentContainer}>
+            <Text style={styles.assessmentBody}>{assessmentSummary}</Text>
+          </View>
+        ) : (
+          <SummaryEmptyState label={assessmentSummaryEmptyLabel} />
+        )}
+        {overallUrgency || isIncompleteScreening ? (
+          <View style={styles.subsection}>
+            <Text style={styles.subsectionTitle}>Recommended Urgency</Text>
+            {overallUrgency ? (
+              <SummaryBadge
+                label={`${cap(overallUrgency)} urgency`}
+                tone={urgencyBadgeTone(overallUrgency)}
+              />
+            ) : (
+              <SummaryEmptyState label={assessmentPendingCopy} />
+            )}
+          </View>
+        ) : null}
+        <View style={styles.subsection}>
+          <Text style={styles.subsectionTitle}>Potential Diagnoses</Text>
+          {diagnoses.length > 0 ? (
+            <View style={styles.diagnosisStack}>
+              {diagnoses.map((diagnosis, idx) => (
+                <View key={`diagnosis-${idx}`} style={styles.diagnosisRow}>
+                  <Text style={styles.diagnosisText}>{cap(diagnosis.condition)}</Text>
+                  {diagnosis.confidence != null ? (
+                    <SummaryBadge
+                      label={`${diagnosis.confidence}%`}
+                      tone={confidenceBadgeTone(diagnosis.confidence)}
+                    />
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <SummaryEmptyState label={diagnosesEmptyLabel} />
+          )}
+        </View>
+      </SummarySectionCard>
+
+      <SummarySectionCard
         title="Encounter Snapshot"
         density="compact"
         icon="time-outline"
@@ -399,68 +447,19 @@ export function MobileScreeningSummary({ detail, visitStatus }: Props) {
                     />
                   ) : null}
                 </View>
-                {symptomMetadata(symptom).map((entry) => (
-                  <SummaryDataRow
-                    key={entry.label}
-                    inline
-                    label={entry.label}
-                    valueNode={<SummaryBadge tone="neutral" label={entry.value} />}
-                  />
-                ))}
+                {symptomMetadata(symptom).length > 0 ? (
+                  <View style={luminaStyles.inset}>
+                    {symptomMetadata(symptom).map((entry) => (
+                      <SummaryDataRow key={entry.label} inline label={entry.label} value={entry.value} />
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ))}
           </View>
         ) : (
           <SummaryEmptyState label={symptomsEmptyLabel} />
         )}
-      </SummarySectionCard>
-
-      <SummarySectionCard
-        title="AI Assessment"
-        density="hero"
-        tone="accent"
-        icon="sparkles-outline"
-      >
-        {assessmentSummary ? (
-          <View style={styles.assessmentContainer}>
-            <Text style={styles.assessmentBody}>{assessmentSummary}</Text>
-          </View>
-        ) : (
-          <SummaryEmptyState label={assessmentSummaryEmptyLabel} />
-        )}
-        {overallUrgency || isIncompleteScreening ? (
-          <View style={styles.subsection}>
-            <Text style={styles.subsectionTitle}>Recommended Urgency</Text>
-            {overallUrgency ? (
-              <SummaryBadge
-                label={`${cap(overallUrgency)} urgency`}
-                tone={urgencyBadgeTone(overallUrgency)}
-              />
-            ) : (
-              <SummaryEmptyState label={assessmentPendingCopy} />
-            )}
-          </View>
-        ) : null}
-        <View style={styles.subsection}>
-          <Text style={styles.subsectionTitle}>Potential Diagnoses</Text>
-          {diagnoses.length > 0 ? (
-            <View style={styles.diagnosisStack}>
-              {diagnoses.map((diagnosis, idx) => (
-                <View key={`diagnosis-${idx}`} style={styles.diagnosisRow}>
-                  <Text style={styles.diagnosisText}>{cap(diagnosis.condition)}</Text>
-                  {diagnosis.confidence != null ? (
-                    <SummaryBadge
-                      label={`${diagnosis.confidence}%`}
-                      tone={confidenceBadgeTone(diagnosis.confidence)}
-                    />
-                  ) : null}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <SummaryEmptyState label={diagnosesEmptyLabel} />
-          )}
-        </View>
       </SummarySectionCard>
     </View>
   )
@@ -492,7 +491,7 @@ const styles = StyleSheet.create({
     fontFamily: luminaFonts.body,
   },
   symptomNested: {
-    gap: 2,
+    gap: 8,
   },
   symptomHeader: {
     flexDirection: 'row',

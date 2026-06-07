@@ -14,7 +14,10 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native'
+import { LinearGradient } from 'expo-linear-gradient'
+import { Ionicons } from '@expo/vector-icons'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import {
   dashboardActivity,
@@ -107,6 +110,7 @@ const VISIT_READINESS_ROW_LIMIT = 3
 const RECENT_ACTIVITY_ROW_LIMIT = 2
 
 export function HomeScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets()
   const scrollRef = useRef<ScrollView>(null)
   const visitReadinessSectionY = useRef(0)
   const focusVisitReadiness = route.params?.focusSection === 'visit-readiness'
@@ -260,6 +264,8 @@ export function HomeScreen({ navigation, route }: Props) {
       tone: activityTone(item),
     }))
 
+  const needsAttentionUrgent = needsAttention.some((item) => item.severity === 'urgent')
+
   const needsAttentionRows = needsAttentionRowsAll.slice(0, NEEDS_ATTENTION_ROW_LIMIT)
   const remainingAfterNeeds = Math.max(0, TOTAL_ROW_LIMIT - needsAttentionRows.length)
   const visitReadinessRows = visitReadinessRowsAll.slice(
@@ -277,21 +283,39 @@ export function HomeScreen({ navigation, route }: Props) {
       <ScrollView
         ref={scrollRef}
         style={luminaStyles.screenTransparent}
-        contentContainerStyle={luminaStyles.pageContent}
+        contentContainerStyle={[luminaStyles.pageContent, { paddingTop: insets.top + 14 }]}
       >
-        {meta ? (
-          <Text style={styles.clinicEyebrow} numberOfLines={1}>
-            {meta.company.name ?? 'Clinic'}
-          </Text>
-        ) : null}
+        <LinearGradient
+          colors={['#FFFFFF', '#F3FBFA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.headerWash}
+        >
+          {meta ? (
+            <Text style={styles.clinicEyebrow} numberOfLines={1}>
+              {meta.company.name ?? 'Clinic'}
+            </Text>
+          ) : null}
+          <Text style={luminaStyles.largeTitle}>Today</Text>
+        </LinearGradient>
 
         {loading ? <LoadingState label="Loading dashboard..." /> : null}
         {error ? <ErrorState body={error} onRetry={() => void loadDashboard()} /> : null}
 
         {!loading && !error ? (
           <View style={styles.metricStack}>
-            <View style={[luminaStyles.card, styles.metricCell]}>
-              <Text style={styles.metricValue}>{needsAttentionRowsAll.length}</Text>
+            <View
+              style={[
+                needsAttentionRowsAll.length > 0 ? luminaStyles.accentCard : luminaStyles.card,
+                styles.metricCell,
+                needsAttentionRowsAll.length > 0 && needsAttentionUrgent
+                  ? styles.metricCellUrgentRail
+                  : null,
+              ]}
+            >
+              <Text style={[styles.metricValue, luminaStyles.tabularNums]}>
+                {needsAttentionRowsAll.length}
+              </Text>
               <Text
                 style={[luminaStyles.metaText, styles.metricLabel]}
                 numberOfLines={2}
@@ -302,7 +326,9 @@ export function HomeScreen({ navigation, route }: Props) {
               </Text>
             </View>
             <View style={[luminaStyles.card, styles.metricCell]}>
-              <Text style={styles.metricValue}>{visitReadinessRowsAll.length}</Text>
+              <Text style={[styles.metricValue, luminaStyles.tabularNums]}>
+                {visitReadinessRowsAll.length}
+              </Text>
               <Text
                 style={[luminaStyles.metaText, styles.metricLabel]}
                 numberOfLines={2}
@@ -313,7 +339,9 @@ export function HomeScreen({ navigation, route }: Props) {
               </Text>
             </View>
             <View style={[luminaStyles.card, styles.metricCell]}>
-              <Text style={styles.metricValue}>{recentActivityRowsAll.length}</Text>
+              <Text style={[styles.metricValue, luminaStyles.tabularNums]}>
+                {recentActivityRowsAll.length}
+              </Text>
               <Text
                 style={[luminaStyles.metaText, styles.metricLabel]}
                 numberOfLines={2}
@@ -331,6 +359,7 @@ export function HomeScreen({ navigation, route }: Props) {
           emptyText="No urgent items."
           rows={needsAttentionRows}
           onPressRow={runAction}
+          accentFirstRow
         />
 
         <Section
@@ -360,6 +389,7 @@ function Section({
   onPressRow,
   containerStyle,
   onLayout,
+  accentFirstRow,
 }: {
   title: string
   emptyText: string
@@ -367,6 +397,7 @@ function Section({
   onPressRow: (item: Pick<ActionRow, 'action' | 'screeningId' | 'patientId'>) => void
   containerStyle?: StyleProp<ViewStyle>
   onLayout?: (e: LayoutChangeEvent) => void
+  accentFirstRow?: boolean
 }) {
   const sectionStyle: StyleProp<ViewStyle> = [
     luminaStyles.card,
@@ -384,36 +415,46 @@ function Section({
   return (
     <View style={sectionStyle} onLayout={onLayout}>
       <Text style={luminaStyles.sectionHeader}>{title}</Text>
-      {rows.map((row) => {
-        const canOpen = isSupportedDashboardAction(row.action)
-        return (
-          <AnimatedRow
-            key={row.id}
-            disabled={!canOpen}
-            onPress={() => {
-              if (!canOpen) return
-              onPressRow({
-                action: row.action,
-                screeningId: row.screeningId,
-                patientId: row.patientId,
-              })
-            }}
-          >
-            <View style={styles.rowInner}>
-              <View style={[luminaStyles.statusDot, toneDotStyle(row.tone)]} />
-              <View style={styles.rowTextCol}>
-                <Text style={luminaStyles.rowTitleStrong}>{row.title}</Text>
-                {row.chipLabel ? (
-                  <View style={styles.rowChipRow}>
-                    <SummaryBadge tone={row.chipTone ?? 'neutral'} label={row.chipLabel} />
+      <View style={styles.groupedList}>
+        {rows.map((row, index) => {
+          const canOpen = isSupportedDashboardAction(row.action)
+          return (
+            <View key={row.id}>
+              {index > 0 ? <View style={styles.rowDivider} /> : null}
+              <AnimatedRow
+                accent={accentFirstRow && index === 0}
+                disabled={!canOpen}
+                onPress={() => {
+                  if (!canOpen) return
+                  onPressRow({
+                    action: row.action,
+                    screeningId: row.screeningId,
+                    patientId: row.patientId,
+                  })
+                }}
+              >
+                <View style={styles.rowInner}>
+                  <View style={styles.rowDotSlot}>
+                    <View style={[luminaStyles.statusDot, styles.rowDot, toneDotStyle(row.tone)]} />
                   </View>
-                ) : null}
-                <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
-              </View>
+                  <View style={styles.rowTextCol}>
+                    <Text style={luminaStyles.rowTitleStrong}>{row.title}</Text>
+                    {row.chipLabel ? (
+                      <View style={styles.rowChipRow}>
+                        <SummaryBadge tone={row.chipTone ?? 'neutral'} label={row.chipLabel} />
+                      </View>
+                    ) : null}
+                    <Text style={luminaStyles.metaText}>{row.subtitle}</Text>
+                  </View>
+                  <View style={styles.chevronCell}>
+                    <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+                  </View>
+                </View>
+              </AnimatedRow>
             </View>
-          </AnimatedRow>
-        )
-      })}
+          )
+        })}
+      </View>
     </View>
   )
 }
@@ -422,10 +463,12 @@ function AnimatedRow({
   children,
   disabled,
   onPress,
+  accent,
 }: {
   children: ReactNode
   disabled: boolean
   onPress: () => void
+  accent?: boolean
 }) {
   const scale = useSharedValue(1)
   const animatedStyle = useAnimatedStyle(() => ({
@@ -434,7 +477,11 @@ function AnimatedRow({
   return (
     <Animated.View style={animatedStyle}>
       <Pressable
-        style={luminaStyles.listRowCompact}
+        style={({ pressed }) => [
+          styles.groupedRow,
+          accent && luminaStyles.accentRail,
+          pressed && luminaStyles.pressedRow,
+        ]}
         disabled={disabled}
         onPressIn={() => {
           scale.value = withSpring(0.98, { stiffness: 300, damping: 30 })
@@ -456,6 +503,12 @@ const styles = StyleSheet.create({
   },
   sectionListBlock: {
     gap: 12,
+  },
+  headerWash: {
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 4,
   },
   clinicEyebrow: {
     color: lumina.onSurfaceVariant,
@@ -489,16 +542,42 @@ const styles = StyleSheet.create({
     fontFamily: luminaFonts.bodyMedium,
     textAlign: 'center',
   },
+  metricCellUrgentRail: {
+    borderLeftColor: '#854D0E',
+  },
   visitReadinessFocused: {
     backgroundColor: lumina.surfaceLowest,
+  },
+  groupedList: {},
+  groupedRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 2,
+  },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: lumina.outlineVariant,
+    marginLeft: 30,
   },
   rowInner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
+  rowDotSlot: {
+    width: 28,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    paddingTop: 5,
+  },
+  rowDot: {
+    marginRight: 0,
+  },
   rowTextCol: {
     flex: 1,
     gap: 3,
+  },
+  chevronCell: {
+    alignSelf: 'center',
+    marginLeft: 4,
   },
   rowChipRow: {
     flexDirection: 'row',

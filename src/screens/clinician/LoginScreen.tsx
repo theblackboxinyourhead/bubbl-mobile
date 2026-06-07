@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, TextInput, View, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import * as WebBrowser from 'expo-web-browser'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
 import { AuthShell } from '@/screens/shared/AuthShell'
 import { SocialAuthButtons } from '@/screens/shared/SocialAuthButtons'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { signInWithPassword, signUpClinicianWithEmail, startOAuthFlow } from '@/api/auth'
 import { saveAuthOriginRoleHint, saveOAuthRoleHint } from '@/lib/storage'
 
@@ -14,6 +15,7 @@ type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianAuthEntry
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }
 
 export function LoginScreen({
@@ -22,6 +24,7 @@ export function LoginScreen({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: Props) {
   const [isSignIn, setIsSignIn] = useState(true)
   const [firstName, setFirstName] = useState('')
@@ -35,6 +38,7 @@ export function LoginScreen({
   const [busyProvider, setBusyProvider] = useState<'google' | 'microsoft' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
+  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   const subtitle = useMemo(
     () =>
@@ -89,8 +93,11 @@ export function LoginScreen({
     try {
       await saveOAuthRoleHint('clinician')
       await saveAuthOriginRoleHint('clinician')
-      const { url } = await startOAuthFlow({ provider })
-      await WebBrowser.openBrowserAsync(url)
+      const { url, redirectTo } = await startOAuthFlow({ provider })
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectTo)
+      if (result.type === 'success' && result.url) {
+        onIncomingAuthUrl(result.url)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start social sign-in.')
     } finally {
@@ -120,7 +127,7 @@ export function LoginScreen({
         setEmailSent(false)
         setIsSignIn((prev) => !prev)
       }}
-      loading={loading}
+      loading={passwordSubmitLoading}
       error={error ?? bootstrapError ?? null}
       socialSlot={
         <SocialAuthButtons
@@ -140,7 +147,7 @@ export function LoginScreen({
                 value={firstName}
                 onChangeText={setFirstName}
                 placeholder="First name"
-                placeholderTextColor={lumina.onSurfaceVariant}
+                placeholderTextColor={lumina.outline}
               />
               <Text style={luminaStyles.label}>Last name</Text>
               <TextInput
@@ -148,50 +155,70 @@ export function LoginScreen({
                 value={lastName}
                 onChangeText={setLastName}
                 placeholder="Last name"
-                placeholderTextColor={lumina.onSurfaceVariant}
+                placeholderTextColor={lumina.outline}
               />
             </>
           ) : null}
 
           <Text style={luminaStyles.label}>Email</Text>
-          <TextInput
-            testID="clinician-login-email-input"
-            style={luminaStyles.input}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="name@example.com"
-            placeholderTextColor={lumina.onSurfaceVariant}
-          />
+          <View style={[styles.iconField, focusedField === 'email' && luminaStyles.inputFocused]}>
+            <Ionicons name="mail-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+            <TextInput
+              testID="clinician-login-email-input"
+              style={styles.iconFieldInput}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              onFocus={() => setFocusedField('email')}
+              onBlur={() => setFocusedField(null)}
+              placeholder="name@example.com"
+              placeholderTextColor={lumina.outline}
+            />
+          </View>
           <Text style={luminaStyles.label}>Password</Text>
-          <TextInput
-            testID="clinician-login-password-input"
-            style={luminaStyles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder={isSignIn ? 'Password' : 'Create password'}
-            placeholderTextColor={lumina.onSurfaceVariant}
-          />
+          <View style={[styles.iconField, focusedField === 'password' && luminaStyles.inputFocused]}>
+            <Ionicons name="lock-closed-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+            <TextInput
+              testID="clinician-login-password-input"
+              style={styles.iconFieldInput}
+              value={password}
+              onChangeText={setPassword}
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+              secureTextEntry
+              placeholder={isSignIn ? 'Password' : 'Create password'}
+              placeholderTextColor={lumina.outline}
+            />
+          </View>
 
           {!isSignIn ? (
             <>
               <Text style={luminaStyles.label}>Confirm password</Text>
-              <TextInput
-                style={luminaStyles.input}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                placeholder="Confirm password"
-                placeholderTextColor={lumina.onSurfaceVariant}
-              />
+              <View style={[styles.iconField, focusedField === 'confirmPassword' && luminaStyles.inputFocused]}>
+                <Ionicons name="lock-closed-outline" size={18} color={lumina.onSurfaceVariant} style={styles.iconFieldIcon} />
+                <TextInput
+                  style={styles.iconFieldInput}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  onFocus={() => setFocusedField('confirmPassword')}
+                  onBlur={() => setFocusedField(null)}
+                  secureTextEntry
+                  placeholder="Confirm password"
+                  placeholderTextColor={lumina.outline}
+                />
+              </View>
+              <View style={[luminaStyles.dividerHairline, styles.consentDivider]} />
               <Pressable style={styles.checkboxRow} onPress={() => setAgreeToTerms((prev) => !prev)}>
-                <View style={[styles.checkbox, agreeToTerms ? styles.checkboxOn : undefined]} />
+                <View style={[styles.checkbox, agreeToTerms ? styles.checkboxOn : undefined]}>
+                  {agreeToTerms ? <Ionicons name="checkmark" size={14} color={lumina.onPrimary} /> : null}
+                </View>
                 <Text style={styles.checkboxText}>I agree to terms of service.</Text>
               </Pressable>
               <Pressable style={styles.checkboxRow} onPress={() => setSmsConsent((prev) => !prev)}>
-                <View style={[styles.checkbox, smsConsent ? styles.checkboxOn : undefined]} />
+                <View style={[styles.checkbox, smsConsent ? styles.checkboxOn : undefined]}>
+                  {smsConsent ? <Ionicons name="checkmark" size={14} color={lumina.onPrimary} /> : null}
+                </View>
                 <Text style={styles.checkboxText}>I consent to SMS communication.</Text>
               </Pressable>
             </>
@@ -205,7 +232,7 @@ export function LoginScreen({
             testID="clinician-login-submit-button"
             style={[
               luminaStyles.primaryButton,
-              loading && luminaStyles.primaryButtonDisabled,
+              loading && luminaStyles.buttonDisabledTonal,
             ]}
             onPress={() => void runEmailFlow()}
             disabled={loading}
@@ -213,7 +240,14 @@ export function LoginScreen({
             {passwordSubmitLoading ? (
               <ActivityIndicator color={lumina.onPrimary} />
             ) : (
-              <Text style={luminaStyles.primaryButtonText}>{isSignIn ? 'Sign in' : 'Create account'}</Text>
+              <Text
+                style={[
+                  luminaStyles.primaryButtonText,
+                  loading && luminaStyles.buttonDisabledTonalText,
+                ]}
+              >
+                {isSignIn ? 'Sign in' : 'Create account'}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -226,22 +260,51 @@ const styles = StyleSheet.create({
   formWrap: {
     gap: 10,
   },
+  consentDivider: {
+    marginVertical: 4,
+  },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    minHeight: 44,
   },
   checkbox: {
-    width: 18,
-    height: 18,
+    width: 22,
+    height: 22,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     backgroundColor: lumina.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   checkboxOn: {
     backgroundColor: lumina.primary,
+    borderColor: lumina.primary,
   },
   checkboxText: {
-    color: lumina.onSurfaceVariant,
+    flex: 1,
+    color: lumina.onSurface,
     fontSize: 14,
+    fontFamily: luminaFonts.body,
+  },
+  iconField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    paddingHorizontal: 12,
+  },
+  iconFieldIcon: {
+    marginRight: 8,
+  },
+  iconFieldInput: {
+    flex: 1,
+    paddingVertical: 12,
+    color: lumina.onSurface,
+    fontFamily: luminaFonts.body,
   },
 })
