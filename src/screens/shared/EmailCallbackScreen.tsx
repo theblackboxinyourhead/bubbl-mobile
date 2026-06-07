@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Text, View, StyleSheet } from 'react-native'
+import { Text, View, StyleSheet } from 'react-native'
 import * as Linking from 'expo-linking'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '@/navigation/RootNavigator'
 import { completeEmailCallback } from '@/api/auth'
 import { clearAuthOriginRoleHint, clearOAuthRoleHint, loadAuthOriginRoleHint } from '@/lib/storage'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { LoadingState } from '@/screens/shared/ScreenState'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EmailCallback'> & {
   onAuthResolved: () => Promise<void> | void
@@ -13,6 +14,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EmailCallback'> & {
 }
 
 const CALLBACK_PATH = '/auth/callback/email'
+
+function urlIncludesCallbackPath(url: string, path: string): boolean {
+  const cleanedPath = path.replace(/^\//, '')
+  return url.includes(path) || url.includes(`://${cleanedPath}`)
+}
 
 export function EmailCallbackScreen({ route, onAuthResolved, onAuthError }: Props) {
   const [status, setStatus] = useState('Completing email verification...')
@@ -26,9 +32,9 @@ export function EmailCallbackScreen({ route, onAuthResolved, onAuthError }: Prop
       try {
         const initialUrl = await Linking.getInitialURL()
         const url =
-          route.params?.rawUrl && route.params.rawUrl.includes(CALLBACK_PATH)
+          route.params?.rawUrl && urlIncludesCallbackPath(route.params.rawUrl, CALLBACK_PATH)
             ? route.params.rawUrl
-            : initialUrl && initialUrl.includes(CALLBACK_PATH)
+            : initialUrl && urlIncludesCallbackPath(initialUrl, CALLBACK_PATH)
               ? initialUrl
               : null
 
@@ -50,12 +56,15 @@ export function EmailCallbackScreen({ route, onAuthResolved, onAuthError }: Prop
     })()
   }, [onAuthError, onAuthResolved, route.params?.rawUrl])
 
+  const step =
+    status === 'Routing your account...' ? 3 : status === 'Establishing session...' ? 2 : 1
+
   return (
     <View style={styles.screen}>
       <View style={styles.card}>
-        <ActivityIndicator color={lumina.primary} />
+        <Text style={styles.eyebrow}>{`Step ${step} of 3`}</Text>
         <Text style={styles.title}>One moment</Text>
-        <Text style={styles.body}>{status}</Text>
+        <LoadingState label={status} />
       </View>
     </View>
   )
@@ -68,19 +77,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   card: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
-    gap: 12,
+    ...luminaStyles.card,
     alignItems: 'center',
+  },
+  eyebrow: {
+    ...luminaStyles.eyebrow,
   },
   title: {
     color: lumina.onSurface,
     fontSize: 24,
-    fontWeight: '700',
-  },
-  body: {
-    color: lumina.onSurfaceVariant,
-    fontSize: 15,
+    fontFamily: luminaFonts.display,
   },
 })

@@ -10,7 +10,7 @@ import {
 } from '@react-navigation/native-stack'
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native'
 import { Ionicons } from '@expo/vector-icons'
-import { Platform, Text, View } from 'react-native'
+import { Platform, StyleSheet, Text, View } from 'react-native'
 import { InviteEntryScreen } from '@/screens/patient/InviteEntryScreen'
 import { WebFallbackScreen } from '@/screens/patient/WebFallbackScreen'
 import { VerifyOtpScreen } from '@/screens/patient/VerifyOtpScreen'
@@ -111,12 +111,16 @@ const authenticatedHeaderTintColor = lumina.primary
 const authenticatedHeaderShadowVisible = false
 const authenticatedDetailHeaderStyle = {
   backgroundColor: authenticatedHeaderBackground,
+  borderBottomWidth: StyleSheet.hairlineWidth,
+  borderBottomColor: lumina.outlineVariant,
 }
 
 function buildAuthenticatedTabHeaderOptions(): BottomTabNavigationOptions {
   return {
     headerStyle: {
       backgroundColor: authenticatedHeaderBackground,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: lumina.outlineVariant,
     },
     headerTitleStyle: {
       color: authenticatedHeaderTitleColor,
@@ -162,6 +166,30 @@ function buildAuthenticatedDetailHeaderOptions(): NativeStackNavigationOptions {
   }
 }
 
+const tabIconStyles = StyleSheet.create({
+  iconWrap: {
+    minWidth: 44,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  iconWrapActive: {
+    backgroundColor: lumina.secondaryContainer,
+    ...Platform.select({
+      ios: {
+        shadowColor: lumina.primaryGlow,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.6,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+})
+
 function patientTabIcon(routeName: keyof PatientTabParamList, focused: boolean): keyof typeof Ionicons.glyphMap {
   if (routeName === 'PatientHome') return focused ? 'home' : 'home-outline'
   if (routeName === 'Timeline') return focused ? 'time' : 'time-outline'
@@ -190,19 +218,9 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
         tabBarIcon: ({ color, size, focused }) => (
           <View
             style={[
-              { width: size, height: size, alignItems: 'center', justifyContent: 'center' },
-              focused
-                ? Platform.select({
-                    ios: {
-                      shadowColor: lumina.primaryGlow,
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.6,
-                      shadowRadius: 8,
-                    },
-                    android: { elevation: 4 },
-                    default: {},
-                  })
-                : undefined,
+              tabIconStyles.iconWrap,
+              { height: size + 8 },
+              focused ? tabIconStyles.iconWrapActive : undefined,
             ]}
           >
             <Ionicons
@@ -221,6 +239,7 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Home</Text>
           ),
+          headerShown: false,
           title: 'Home',
         }}
       />
@@ -232,6 +251,7 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>History</Text>
           ),
+          headerShown: false,
           title: 'History',
         }}
       />
@@ -242,6 +262,7 @@ function PatientTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> | 
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Profile</Text>
           ),
+          headerShown: false,
           title: 'Profile',
         }}
       >
@@ -263,19 +284,9 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
         tabBarIcon: ({ color, size, focused }) => (
           <View
             style={[
-              { width: size, height: size, alignItems: 'center', justifyContent: 'center' },
-              focused
-                ? Platform.select({
-                    ios: {
-                      shadowColor: lumina.primaryGlow,
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.6,
-                      shadowRadius: 8,
-                    },
-                    android: { elevation: 4 },
-                    default: {},
-                  })
-                : undefined,
+              tabIconStyles.iconWrap,
+              { height: size + 8 },
+              focused ? tabIconStyles.iconWrapActive : undefined,
             ]}
           >
             <Ionicons
@@ -294,6 +305,7 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Today</Text>
           ),
+          headerShown: false,
           title: 'Today',
         }}
       />
@@ -326,6 +338,7 @@ function ClinicianTabsNavigator({ onSignOut }: { onSignOut: () => Promise<void> 
           tabBarLabel: ({ focused, color }) => (
             <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '500' }}>Profile</Text>
           ),
+          headerShown: false,
           title: 'Profile',
         }}
       >
@@ -343,6 +356,7 @@ export function PatientNavigator({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   initial?: keyof PatientStackParamList
   onBackToRoles: () => void
@@ -351,6 +365,7 @@ export function PatientNavigator({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <PatientStack.Navigator
@@ -372,19 +387,20 @@ export function PatientNavigator({
             bootstrapError={bootstrapError}
             authBootstrapLoading={authBootstrapLoading}
             onPasswordSignInAccepted={onPasswordSignInAccepted}
+            onIncomingAuthUrl={onIncomingAuthUrl}
           />
         )}
       </PatientStack.Screen>
-      <PatientStack.Screen name="PatientPhoneVerification">
+      <PatientStack.Screen name="PatientPhoneVerification" options={{ title: 'Verify phone' }}>
         {(props) => <PatientPhoneVerificationScreen {...props} onResolved={onAuthResolved} />}
       </PatientStack.Screen>
       <PatientStack.Screen name="InviteEntry" component={InviteEntryScreen} options={{ title: 'Invite' }} />
-      <PatientStack.Screen name="WebFallback" component={WebFallbackScreen} />
-      <PatientStack.Screen name="VerifyOtp" component={VerifyOtpScreen} />
-      <PatientStack.Screen name="Consent" component={ConsentScreen} />
+      <PatientStack.Screen name="WebFallback" component={WebFallbackScreen} options={{ title: 'Open in browser' }} />
+      <PatientStack.Screen name="VerifyOtp" component={VerifyOtpScreen} options={{ title: 'Verify code' }} />
+      <PatientStack.Screen name="Consent" component={ConsentScreen} options={{ title: 'Consent' }} />
       <PatientStack.Screen name="Intake" component={IntakeScreen} options={{ title: 'Intake' }} />
-      <PatientStack.Screen name="ReviewConfirm" component={ReviewConfirmScreen} />
-      <PatientStack.Screen name="Complete">
+      <PatientStack.Screen name="ReviewConfirm" component={ReviewConfirmScreen} options={{ title: 'Review' }} />
+      <PatientStack.Screen name="Complete" options={{ title: 'Complete' }}>
         {(props) => <CompleteScreen {...props} onSignOut={onSignOut} />}
       </PatientStack.Screen>
       <PatientStack.Screen name="PatientTabs" options={{ headerShown: false }}>
@@ -395,7 +411,7 @@ export function PatientNavigator({
         component={PatientScreeningDetailScreen}
         options={{ ...buildAuthenticatedDetailHeaderOptions(), title: 'Screening', headerBackTitle: 'Back' }}
       />
-      <PatientStack.Screen name="CheckInStart" component={CheckInStartScreen} />
+      <PatientStack.Screen name="CheckInStart" component={CheckInStartScreen} options={{ title: 'Check-in' }} />
     </PatientStack.Navigator>
   )
 }
@@ -408,6 +424,7 @@ export function ClinicianNavigator({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   initial?: keyof ClinicianStackParamList
   onBackToRoles: () => void
@@ -416,6 +433,7 @@ export function ClinicianNavigator({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <ClinicianStack.Navigator
@@ -434,6 +452,7 @@ export function ClinicianNavigator({
             bootstrapError={bootstrapError}
             authBootstrapLoading={authBootstrapLoading}
             onPasswordSignInAccepted={onPasswordSignInAccepted}
+            onIncomingAuthUrl={onIncomingAuthUrl}
           />
         )}
       </ClinicianStack.Screen>
@@ -465,6 +484,7 @@ function PatientStackHost({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   patientInitial?: keyof PatientStackParamList
   onBackToRoles: () => void
@@ -473,6 +493,7 @@ function PatientStackHost({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <PatientNavigator
@@ -483,6 +504,7 @@ function PatientStackHost({
       bootstrapError={bootstrapError}
       authBootstrapLoading={authBootstrapLoading}
       onPasswordSignInAccepted={onPasswordSignInAccepted}
+      onIncomingAuthUrl={onIncomingAuthUrl}
     />
   )
 }
@@ -495,6 +517,7 @@ function ClinicianStackHost({
   bootstrapError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   clinicianInitial?: keyof ClinicianStackParamList
   onBackToRoles: () => void
@@ -503,6 +526,7 @@ function ClinicianStackHost({
   bootstrapError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <ClinicianNavigator
@@ -513,6 +537,7 @@ function ClinicianStackHost({
       bootstrapError={bootstrapError}
       authBootstrapLoading={authBootstrapLoading}
       onPasswordSignInAccepted={onPasswordSignInAccepted}
+      onIncomingAuthUrl={onIncomingAuthUrl}
     />
   )
 }
@@ -530,6 +555,7 @@ export function RootNavigator({
   bootstrapAuthError,
   authBootstrapLoading,
   onPasswordSignInAccepted,
+  onIncomingAuthUrl,
 }: {
   mode: 'launch' | 'patient' | 'clinician'
   patientInitial?: keyof PatientStackParamList
@@ -543,6 +569,7 @@ export function RootNavigator({
   bootstrapAuthError?: string | null
   authBootstrapLoading: boolean
   onPasswordSignInAccepted: () => void
+  onIncomingAuthUrl: (url: string) => void
 }) {
   return (
     <RootStack.Navigator
@@ -574,6 +601,7 @@ export function RootNavigator({
               bootstrapError={bootstrapAuthError}
               authBootstrapLoading={authBootstrapLoading}
               onPasswordSignInAccepted={onPasswordSignInAccepted}
+              onIncomingAuthUrl={onIncomingAuthUrl}
             />
           )}
         </RootStack.Screen>
@@ -590,6 +618,7 @@ export function RootNavigator({
               bootstrapError={bootstrapAuthError}
               authBootstrapLoading={authBootstrapLoading}
               onPasswordSignInAccepted={onPasswordSignInAccepted}
+              onIncomingAuthUrl={onIncomingAuthUrl}
             />
           )}
         </RootStack.Screen>

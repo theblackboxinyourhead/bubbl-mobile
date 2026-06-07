@@ -1,9 +1,10 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as Haptics from 'expo-haptics'
 import type { ScribeChunkRow } from '@/api/screenings'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { MobileScribeVoiceBars } from '@/screens/clinician/components/scribe/MobileScribeVoiceBars'
+import { SummaryBadge } from '@/screens/clinician/components/summary/SummaryBadge'
 
 export type LiveScribePhase = 'starting' | 'recording' | 'paused-locally' | 'reconnecting'
 
@@ -34,6 +35,12 @@ function statusPillLabel(phase: LiveScribePhase): string {
   return 'Reconnecting'
 }
 
+function statusPillTone(phase: LiveScribePhase): 'highlight' | 'badge-blue' | 'neutral' {
+  if (phase === 'recording') return 'highlight'
+  if (phase === 'paused-locally') return 'neutral'
+  return 'badge-blue'
+}
+
 export function MobileScribeLivePanel({
   phase,
   timerLabel,
@@ -48,9 +55,9 @@ export function MobileScribeLivePanel({
   onRecoverTranscript,
   onRefreshSessionData,
 }: Props) {
-  const dotStyle =
-    phase === 'recording' ? luminaStyles.statusDotReady : luminaStyles.statusDotAttention
   const pillLabel = statusPillLabel(phase)
+  const pillTone = statusPillTone(phase)
+  const isPaused = phase === 'paused-locally'
 
   let barHeights: readonly number[] = STARTING_BARS
   let barColor: string = lumina.outline
@@ -73,20 +80,27 @@ export function MobileScribeLivePanel({
           <View style={styles.micBadge}>
             <Ionicons name="mic" size={22} color={lumina.onPrimary} />
           </View>
-          <View style={styles.statusPill}>
-            <View style={[luminaStyles.statusDot, dotStyle]} />
-            <Text style={styles.statusPillLabel}>{pillLabel}</Text>
+          <View style={styles.statusPillSlot}>
+            <SummaryBadge label={pillLabel} tone={pillTone} />
           </View>
         </View>
 
         <Text style={styles.timer}>{timerLabel}</Text>
 
-        <MobileScribeVoiceBars
-          heights={barHeights}
-          barColor={barColor}
-          activeHeights={barActive}
-          animated={barAnimated}
-        />
+        <View style={styles.waveRow}>
+          <MobileScribeVoiceBars
+            heights={barHeights}
+            barColor={barColor}
+            activeHeights={barActive}
+            animated={barAnimated}
+          />
+          {isPaused ? (
+            <View style={styles.pausedChip}>
+              <Ionicons name="pause" size={14} color={lumina.onSurfaceVariant} />
+              <Text style={styles.pausedChipText}>Held</Text>
+            </View>
+          ) : null}
+        </View>
 
         <View style={styles.kpiRow}>
           <View style={styles.kpiPill}>
@@ -105,13 +119,13 @@ export function MobileScribeLivePanel({
           <Pressable
             style={[
               luminaStyles.primaryButton,
-              luminaStyles.primaryButtonDisabled,
+              luminaStyles.buttonDisabledTonal,
               styles.ctaPrimary,
             ]}
             disabled
           >
-            <ActivityIndicator color={lumina.onPrimary} />
-            <Text style={luminaStyles.primaryButtonText}>Starting…</Text>
+            <ActivityIndicator color={lumina.onSurfaceVariant} />
+            <Text style={[luminaStyles.primaryButtonText, luminaStyles.buttonDisabledTonalText]}>Starting…</Text>
           </Pressable>
         ) : null}
 
@@ -285,12 +299,22 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   console: {
-    backgroundColor: lumina.surfaceDim,
+    backgroundColor: '#F3FBFA',
     borderRadius: 16,
     padding: 14,
     gap: 12,
     borderWidth: 1,
     borderColor: lumina.outlineVariant,
+    ...Platform.select({
+      ios: {
+        shadowColor: lumina.primary,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+      },
+      android: { elevation: 2 },
+      default: {},
+    }),
   },
   statusRow: {
     flexDirection: 'row',
@@ -305,19 +329,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statusPill: {
+  statusPillSlot: {
     flex: 1,
+  },
+  waveRow: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  pausedChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lumina.secondaryContainer,
+    gap: 6,
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  statusPillLabel: {
-    color: lumina.onSecondaryContainer,
+  pausedChipText: {
+    color: lumina.onSurfaceVariant,
     fontFamily: luminaFonts.bodySemi,
-    fontSize: 14,
+    fontSize: 12,
   },
   timer: {
     textAlign: 'center',
@@ -333,20 +366,22 @@ const styles = StyleSheet.create({
   },
   kpiPill: {
     flex: 1,
-    backgroundColor: lumina.secondaryContainer,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   kpiValue: {
-    color: lumina.onSecondaryContainer,
+    color: lumina.onSurface,
     fontFamily: luminaFonts.displaySemi,
     fontSize: 20,
     fontVariant: ['tabular-nums'],
   },
   kpiLabel: {
-    color: lumina.onSecondaryContainer,
+    color: lumina.onSurfaceVariant,
     fontFamily: luminaFonts.bodyMedium,
     fontSize: 12,
   },

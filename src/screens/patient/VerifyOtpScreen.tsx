@@ -21,8 +21,15 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
   const [displayPhone, setDisplayPhone] = useState<string | null>(routeDisplayPhone ?? null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [resendIn, setResendIn] = useState(0)
   const inputRef = useRef<TextInput | null>(null)
   const maskedDestination = useMemo(() => maskDestination(displayPhone), [displayPhone])
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const timer = setTimeout(() => setResendIn((prev) => prev - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [resendIn])
 
   const send = async () => {
     setErr(null)
@@ -30,6 +37,7 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
     try {
       const r = await sendOtp(screeningId)
       setDisplayPhone(r.displayPhone)
+      setResendIn(60)
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
         setErr('Too many attempts. Wait a minute and try again.')
@@ -42,7 +50,10 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
   }
 
   useEffect(() => {
-    if (preSent) return
+    if (preSent) {
+      setResendIn(60)
+      return
+    }
     void send()
     // only run first mount for this screening
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,44 +79,67 @@ export function VerifyOtpScreen({ route, navigation }: Props) {
         {maskedDestination ? <Text style={styles.body}>Code sent to {maskedDestination}</Text> : null}
         {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
 
-        <Pressable style={styles.otpRow} onPress={() => inputRef.current?.focus()}>
-          {Array.from({ length: 6 }).map((_, idx) => (
-            <View key={idx} style={styles.otpCell}>
-              <Text style={styles.otpDigit}>{otp[idx] ?? ''}</Text>
-            </View>
-          ))}
-        </Pressable>
-        <TextInput
-          ref={inputRef}
-          style={styles.hiddenInput}
-          value={otp}
-          onChangeText={(next) => setOtp(next.replace(/\D/g, '').slice(0, 6))}
-          keyboardType="number-pad"
-          maxLength={6}
-          textContentType="oneTimeCode"
-        />
+        <View style={[luminaStyles.card, styles.otpCard]}>
+          <Pressable style={styles.otpRow} onPress={() => inputRef.current?.focus()}>
+            {Array.from({ length: 6 }).map((_, idx) => {
+              const active = otp.length === idx
+              const filled = idx < otp.length
+              return (
+                <View
+                  key={idx}
+                  style={[
+                    styles.otpCell,
+                    filled && styles.otpCellFilled,
+                    active && styles.otpCellActive,
+                    idx === 3 && styles.otpCellSplit,
+                  ]}
+                >
+                  <Text style={styles.otpDigit}>{otp[idx] ?? (active ? '|' : '')}</Text>
+                </View>
+              )
+            })}
+          </Pressable>
+          <TextInput
+            ref={inputRef}
+            style={styles.hiddenInput}
+            value={otp}
+            onChangeText={(next) => setOtp(next.replace(/\D/g, '').slice(0, 6))}
+            keyboardType="number-pad"
+            maxLength={6}
+            textContentType="oneTimeCode"
+          />
+        </View>
 
-        <Pressable
-          style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
-          onPress={() => void send()}
-          disabled={busy}
-        >
-          {busy ? (
-            <ActivityIndicator color={lumina.onSurface} />
-          ) : (
-            <Text style={luminaStyles.secondaryButtonText}>Resend code</Text>
-          )}
-        </Pressable>
         <Pressable
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,
-            (busy || otp.length !== 6) && luminaStyles.primaryButtonDisabled,
+            (busy || otp.length !== 6) && luminaStyles.buttonDisabledTonal,
           ]}
           onPress={() => void verify()}
           disabled={busy || otp.length !== 6}
         >
-          <Text style={luminaStyles.primaryButtonText}>Verify and continue</Text>
+          <Text
+            style={[
+              luminaStyles.primaryButtonText,
+              (busy || otp.length !== 6) && luminaStyles.buttonDisabledTonalText,
+            ]}
+          >
+            Verify and continue
+          </Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [luminaStyles.primaryOutlineButton, pressed && luminaStyles.pressedButton]}
+          onPress={() => void send()}
+          disabled={busy || resendIn > 0}
+        >
+          {busy ? (
+            <ActivityIndicator color={lumina.primary} />
+          ) : (
+            <Text style={luminaStyles.primaryOutlineButtonText}>
+              {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+            </Text>
+          )}
         </Pressable>
       </View>
     </ScrollView>
@@ -130,6 +164,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontFamily: luminaFonts.body,
   },
+  otpCard: {
+    padding: 14,
+    gap: 0,
+  },
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -137,11 +175,23 @@ const styles = StyleSheet.create({
   },
   otpCell: {
     flex: 1,
-    borderRadius: 16,
-    backgroundColor: lumina.surfaceLowest,
+    borderRadius: 14,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 56,
+    minHeight: 48,
+  },
+  otpCellSplit: {
+    marginLeft: 10,
+  },
+  otpCellFilled: {
+    backgroundColor: lumina.secondaryContainer,
+  },
+  otpCellActive: {
+    borderWidth: 2,
+    borderColor: lumina.primaryFixed,
   },
   otpDigit: {
     color: lumina.onSurface,

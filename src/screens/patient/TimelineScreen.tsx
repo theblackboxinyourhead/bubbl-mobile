@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchPatientHistory } from '@/api/patients'
@@ -56,6 +57,7 @@ function summarizeSymptoms(symptomsData: unknown): string | null {
 }
 
 export function TimelineScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<TimelineItem[]>([])
@@ -124,8 +126,28 @@ export function TimelineScreen({ navigation }: Props) {
     void refresh()
   }, [refresh])
 
+  const mostRecentId = items.length > 0 ? items[0].id : null
+  const monthGroups = useMemo(() => {
+    const groups: { key: string; label: string; items: TimelineItem[] }[] = []
+    for (const item of items) {
+      const ts = timestampOf(item.historyAt)
+      const date = ts > 0 ? new Date(ts) : null
+      const key = date ? `${date.getFullYear()}-${date.getMonth()}` : 'unknown'
+      const label = date
+        ? date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+        : 'Earlier'
+      const existing = groups.find((g) => g.key === key)
+      if (existing) {
+        existing.items.push(item)
+      } else {
+        groups.push({ key, label, items: [item] })
+      }
+    }
+    return groups
+  }, [items])
+
   return (
-    <ScrollView style={luminaStyles.screen} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screen} contentContainerStyle={[luminaStyles.pageContent, { paddingTop: insets.top + 14 }]}>
       {loading ? <LoadingState label="Loading history..." /> : null}
       {error && items.length === 0 ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && items.length > 0 ? (
@@ -137,52 +159,80 @@ export function TimelineScreen({ navigation }: Props) {
       ) : null}
 
       {items.length > 0 ? (
-        <View style={styles.timelineList}>
-          {items.map((item) => {
-            const formattedDate = formatDateLabel(item.historyAt)
-            const metaText = item.clinicianName
-              ? `Completed · ${item.clinicianName}`
-              : 'Completed'
-            return (
-              <Pressable
-                key={item.id}
-                testID={`patient-timeline-row-${item.id}`}
-                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
-                onPress={() => navigation.navigate('PatientScreeningDetail', { screeningId: item.id })}
-                accessibilityRole="button"
-                accessibilityLabel={`Open screening from ${formattedDate}`}
-              >
-                <View style={styles.rowInner}>
-                  <View style={[luminaStyles.statusDot, luminaStyles.statusDotReady]} />
-                  <View style={styles.rowTextCol}>
-                    <Text style={luminaStyles.rowTitleStrong}>{formattedDate}</Text>
-                    <Text style={luminaStyles.metaText}>{metaText}</Text>
-                    {item.symptomsSummary ? (
-                      <Text style={luminaStyles.metaText} numberOfLines={3}>
-                        {item.symptomsSummary}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.chevronCell}>
-                    <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
-                  </View>
-                </View>
-              </Pressable>
-            )
-          })}
-        </View>
+        <>
+          <Text style={luminaStyles.largeTitle}>History</Text>
+          {monthGroups.map((group) => (
+            <View key={group.key} style={styles.group}>
+              <Text style={luminaStyles.eyebrow}>{group.label}</Text>
+              <View style={luminaStyles.card}>
+                {group.items.map((item, index) => {
+                  const formattedDate = formatDateLabel(item.historyAt)
+                  const metaText = item.clinicianName
+                    ? `Completed · ${item.clinicianName}`
+                    : 'Completed'
+                  const isMostRecent = item.id === mostRecentId
+                  return (
+                    <View key={item.id}>
+                      {index > 0 ? <View style={luminaStyles.dividerHairline} /> : null}
+                      <Pressable
+                        testID={`patient-timeline-row-${item.id}`}
+                        style={({ pressed }) => [styles.groupedRow, pressed && luminaStyles.pressedRow]}
+                        onPress={() => navigation.navigate('PatientScreeningDetail', { screeningId: item.id })}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open screening from ${formattedDate}`}
+                      >
+                        <View style={styles.accessorySlot}>
+                          <View
+                            style={[
+                              luminaStyles.statusDot,
+                              luminaStyles.statusDotReady,
+                              isMostRecent && styles.mostRecentDot,
+                            ]}
+                          />
+                        </View>
+                        <View style={styles.rowTextCol}>
+                          <Text style={luminaStyles.rowTitleStrong}>{formattedDate}</Text>
+                          <Text style={luminaStyles.metaText}>{metaText}</Text>
+                          {item.symptomsSummary ? (
+                            <Text style={luminaStyles.metaText} numberOfLines={3}>
+                              {item.symptomsSummary}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.chevronCell}>
+                          <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
+                        </View>
+                      </Pressable>
+                    </View>
+                  )
+                })}
+              </View>
+            </View>
+          ))}
+        </>
       ) : null}
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  timelineList: {
-    gap: 10,
+  group: {
+    gap: 8,
   },
-  rowInner: {
+  groupedRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    minHeight: 56,
+    paddingVertical: 14,
+  },
+  accessorySlot: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 5,
+  },
+  mostRecentDot: {
+    backgroundColor: lumina.primaryFixed,
   },
   rowTextCol: {
     flex: 1,

@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
@@ -76,6 +77,38 @@ function SoapBlock({ label, children }: { label: string; children: ReactNode }) 
   )
 }
 
+type InsightTone = 'red' | 'amber' | undefined
+
+function InsightBlock({
+  label,
+  tone,
+  children,
+}: {
+  label: string
+  tone: InsightTone
+  children: ReactNode
+}) {
+  if (!tone) {
+    return <SoapBlock label={label}>{children}</SoapBlock>
+  }
+  const isRed = tone === 'red'
+  return (
+    <View style={[styles.soapBlock, isRed ? styles.insightRed : styles.insightAmber]}>
+      <View style={styles.insightHeader}>
+        <Ionicons
+          name={isRed ? 'alert-circle' : 'warning'}
+          size={16}
+          color={isRed ? '#991B1B' : '#854D0E'}
+        />
+        <Text style={[styles.subheading, isRed ? styles.insightLabelRed : styles.insightLabelAmber]}>
+          {label}
+        </Text>
+      </View>
+      {children}
+    </View>
+  )
+}
+
 function ScribeSummarySection({ data }: { data: ScribeRecordSummaryForReview }) {
   const hasNarrative = !!data.summaryNarrative
   const hasSoap =
@@ -123,14 +156,14 @@ function ScribeSummarySection({ data }: { data: ScribeRecordSummaryForReview }) 
   )
 }
 
-const INSIGHT_LABELS: { key: keyof ClinicalInsightsForReview; label: string }[] = [
-  { key: 'missingInfo', label: 'Missing info' },
-  { key: 'contradictions', label: 'Contradictions' },
-  { key: 'redFlags', label: 'Red flags' },
-  { key: 'medDiscrepancies', label: 'Medication discrepancies' },
-  { key: 'followUpQuestions', label: 'Follow-up questions' },
-  { key: 'planSuggestions', label: 'Plan suggestions' },
-  { key: 'notesForClinician', label: 'Notes for clinician' },
+const INSIGHT_LABELS: { key: keyof ClinicalInsightsForReview; label: string; tone: InsightTone }[] = [
+  { key: 'missingInfo', label: 'Missing info', tone: undefined },
+  { key: 'contradictions', label: 'Contradictions', tone: 'amber' },
+  { key: 'redFlags', label: 'Red flags', tone: 'red' },
+  { key: 'medDiscrepancies', label: 'Medication discrepancies', tone: 'amber' },
+  { key: 'followUpQuestions', label: 'Follow-up questions', tone: undefined },
+  { key: 'planSuggestions', label: 'Plan suggestions', tone: undefined },
+  { key: 'notesForClinician', label: 'Notes for clinician', tone: undefined },
 ]
 
 function ClinicalInsightsSection({ data }: { data: ClinicalInsightsForReview }) {
@@ -146,10 +179,10 @@ function ClinicalInsightsSection({ data }: { data: ClinicalInsightsForReview }) 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Clinical insights</Text>
-      {blocks.map(({ key, label }) => (
-        <SoapBlock key={key} label={label}>
+      {blocks.map(({ key, label, tone }) => (
+        <InsightBlock key={key} label={label} tone={tone}>
           <BulletList items={data[key]} />
-        </SoapBlock>
+        </InsightBlock>
       ))}
     </View>
   )
@@ -170,6 +203,16 @@ export function MobileScribeReviewPanel({
 }: Props) {
   const generationEnabled =
     !generating && !summaryGenerationComplete && (transcriptReady || !!sessionId)
+  const successScale = useRef(new Animated.Value(0.8)).current
+  const successOpacity = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    if (!summaryGenerationComplete) return
+    Animated.parallel([
+      Animated.spring(successScale, { toValue: 1, useNativeDriver: true, friction: 6 }),
+      Animated.timing(successOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
+    ]).start()
+  }, [summaryGenerationComplete, successOpacity, successScale])
 
   let headerTitle: string
   if (summaryGenerationComplete) headerTitle = 'Summary complete'
@@ -228,18 +271,35 @@ export function MobileScribeReviewPanel({
         </Pressable>
 
         {summaryGenerationComplete ? (
-          <View style={[luminaStyles.secondaryButton, styles.ctaSecondary]}>
-            <Text style={[luminaStyles.secondaryButtonText, styles.successLabel]}>
-              {generationPrimaryLabel}
-            </Text>
+          <View style={styles.successWrap}>
+            <Animated.View
+              style={[
+                styles.successRing,
+                { transform: [{ scale: successScale }], opacity: successOpacity },
+              ]}
+            >
+              <LinearGradient
+                colors={['#006B66', '#10B981']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.successMedallion}
+              >
+                <Ionicons name="checkmark" size={28} color={lumina.onPrimary} />
+              </LinearGradient>
+            </Animated.View>
+            <View style={[luminaStyles.secondaryButton, styles.ctaSecondary]}>
+              <Text style={[luminaStyles.secondaryButtonText, styles.successLabel]}>
+                {generationPrimaryLabel}
+              </Text>
+            </View>
           </View>
         ) : (
           <Pressable
             style={({ pressed }) => [
               luminaStyles.secondaryButton,
               styles.ctaSecondary,
-              !generationEnabled ? styles.disabled : undefined,
-              pressed && luminaStyles.pressedButton,
+              !generationEnabled ? luminaStyles.buttonDisabledTonal : undefined,
+              pressed && generationEnabled && luminaStyles.pressedButton,
             ]}
             onPress={() => {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -248,7 +308,14 @@ export function MobileScribeReviewPanel({
             disabled={!generationEnabled}
           >
             {generating ? <ActivityIndicator color={lumina.primary} /> : null}
-            <Text style={luminaStyles.secondaryButtonText}>{generationPrimaryLabel}</Text>
+            <Text
+              style={[
+                luminaStyles.secondaryButtonText,
+                !generationEnabled ? luminaStyles.buttonDisabledTonalText : undefined,
+              ]}
+            >
+              {generationPrimaryLabel}
+            </Text>
           </Pressable>
         )}
 
@@ -271,11 +338,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: lumina.surfaceDim,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: lumina.outlineVariant,
+    ...Platform.select({
+      ios: {
+        shadowColor: lumina.primary,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+      },
+      android: { elevation: 2 },
+      default: {},
+    }),
   },
   completionBadge: {
     width: 44,
@@ -303,15 +380,15 @@ const styles = StyleSheet.create({
   section: {
     gap: 6,
     borderRadius: 16,
-    backgroundColor: lumina.surfaceDim,
-    padding: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 14,
     borderWidth: 1,
     borderColor: lumina.outlineVariant,
   },
   sectionTitle: {
     color: lumina.onSurface,
-    fontFamily: luminaFonts.bodySemi,
-    fontSize: 14,
+    fontFamily: luminaFonts.displaySemi,
+    fontSize: 15,
   },
   subheading: {
     color: lumina.onSurface,
@@ -330,11 +407,37 @@ const styles = StyleSheet.create({
   },
   soapBlock: {
     gap: 4,
-    borderRadius: 16,
-    backgroundColor: lumina.surfaceDim,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: lumina.outlineVariant,
+    paddingLeft: 12,
+    paddingVertical: 4,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: lumina.outlineVariant,
+  },
+  insightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  insightRed: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#991B1B',
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingRight: 12,
+    paddingVertical: 8,
+  },
+  insightAmber: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#854D0E',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    paddingRight: 12,
+    paddingVertical: 8,
+  },
+  insightLabelRed: {
+    color: '#991B1B',
+  },
+  insightLabelAmber: {
+    color: '#854D0E',
   },
   empty: {
     color: lumina.onSurfaceVariant,
@@ -371,10 +474,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  disabled: {
-    opacity: 0.6,
-  },
   successLabel: {
     fontFamily: luminaFonts.bodySemi,
+  },
+  successWrap: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  successRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 999,
+    backgroundColor: lumina.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successMedallion: {
+    width: 56,
+    height: 56,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 })

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, TextInput, View, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '@/navigation/RootNavigator'
 import { sendPasswordReset } from '@/api/auth'
@@ -58,12 +59,12 @@ export function PasswordResetRequestScreen({ route, onReturnToAuth }: Props) {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 placeholder="name@example.com"
-                placeholderTextColor={lumina.onSurfaceVariant}
+                placeholderTextColor={lumina.outline}
                 value={email}
                 onChangeText={setEmail}
               />
               <Pressable
-                style={[luminaStyles.primaryButton, busy && luminaStyles.primaryButtonDisabled]}
+                style={[luminaStyles.primaryButton, busy && luminaStyles.buttonDisabledTonal]}
                 onPress={() => void submit()}
                 disabled={busy}
               >
@@ -75,9 +76,14 @@ export function PasswordResetRequestScreen({ route, onReturnToAuth }: Props) {
               </Pressable>
             </>
           ) : (
-            <Pressable style={luminaStyles.secondaryButton} onPress={() => onReturnToAuth(roleHint)}>
-              <Text style={luminaStyles.secondaryButtonText}>Return to sign in</Text>
-            </Pressable>
+            <>
+              <View style={styles.medallion}>
+                <Ionicons name="checkmark-circle" size={36} color={lumina.primary} />
+              </View>
+              <Pressable style={luminaStyles.secondaryButton} onPress={() => onReturnToAuth(roleHint)}>
+                <Text style={luminaStyles.secondaryButtonText}>Return to sign in</Text>
+              </Pressable>
+            </>
           )}
         </View>
       }
@@ -88,5 +94,16 @@ export function PasswordResetRequestScreen({ route, onReturnToAuth }: Props) {
 const styles = StyleSheet.create({
   formWrap: {
     gap: 10,
+  },
+  medallion: {
+    alignSelf: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 999,
+    backgroundColor: lumina.secondaryContainer,
+    borderWidth: 2,
+    borderColor: lumina.primaryFixed,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 })

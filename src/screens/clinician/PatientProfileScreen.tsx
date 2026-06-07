@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
+import { useFocusEffect } from '@react-navigation/native'
+import { Feather } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
 import {
@@ -8,6 +9,7 @@ import {
   type ClinicianPatientProfile,
   type ClinicianPatientProfileScreening,
 } from '@/api/clinicians'
+import { formatListTimestamp } from '@/lib/datetime'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
@@ -29,6 +31,9 @@ type MedicalHistoryGroup = {
   title: string
   lines: string[]
 }
+
+const VISIT_SUMMARY_PREFIX =
+  /^(?:HPI Narrative Summary|HPI|Assessment|Plan|Visit Summary|Summary|Narrative Summary)\s*:\s*/i
 
 function asString(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -67,33 +72,31 @@ function deriveMedicalHistoryGroups(medicalHistory: unknown): MedicalHistoryGrou
   ]
 }
 
-function formatWhen(value: string | null): string {
-  if (!value) return 'Not available'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not available'
-  return date.toLocaleString()
+function stripMarkdownForPreview(value: string | null | undefined): string {
+  if (!value?.trim()) return ''
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, ' $1')
+    .replace(/\*\*([^*]+)\*\*/g, ' $1')
+    .replace(/`([^`]+)`/g, ' $1')
+    .replace(/_([^_]+)_/g, ' $1')
+    .replace(/^#+\s+/gm, '')
+    .replace(/^>\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/\*([^*]+)\*/g, ' $1')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-function visitRowTone(screening: ClinicianPatientProfileScreening): 'attention' | 'ready' | 'neutral' {
-  const status = screening.status.trim().toLowerCase()
-  const scribe = (screening.scribeStatus ?? '').trim().toLowerCase()
-  if (status === 'completed' || scribe.includes('complete') || scribe.includes('saved')) return 'ready'
-  if (
-    scribe.includes('record') ||
-    scribe.includes('active') ||
-    status.includes('review') ||
-    status === 'sent' ||
-    status === 'pending'
-  ) {
-    return 'attention'
-  }
-  return 'neutral'
+function historyPreviewText(value: string | null | undefined): string {
+  const text = stripMarkdownForPreview(value)
+    .replace(/\(\s*(?:overall\s+)?urgency\s*:[^)]*\)/gi, '')
+    .trim()
+  return text || 'No summary yet.'
 }
 
-function toneDotStyle(tone: 'attention' | 'ready' | 'neutral') {
-  if (tone === 'ready') return luminaStyles.statusDotReady
-  if (tone === 'attention') return luminaStyles.statusDotAttention
-  return luminaStyles.statusDotNeutral
+function visitPreviewText(value: string | null | undefined): string {
+  const text = stripMarkdownForPreview(value).replace(VISIT_SUMMARY_PREFIX, '').trim()
+  return text || 'No summary yet.'
 }
 
 function medicalGroupBadgeTone(title: string): SummaryBadgeTone {
@@ -103,32 +106,112 @@ function medicalGroupBadgeTone(title: string): SummaryBadgeTone {
   return 'neutral'
 }
 
-function screeningStatusBadgeTone(raw: string): SummaryBadgeTone {
-  const s = raw.trim().toLowerCase()
-  if (s === 'completed') return 'badge-green'
-  if (s === 'sent') return 'badge-gray'
-  if (s === 'in review') return 'badge-blue'
-  if (s === 'error') return 'badge-red'
-  if (s === 'cancelled') return 'badge-cancelled'
-  if (s === 'processing') return 'badge-yellow'
+function normalize(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+type ProfileDotTone = 'ready' | 'inProgress' | 'attention' | 'error' | 'cancelled' | 'neutral'
+
+function profileStatusTone(status: string): ProfileDotTone {
+  const s = normalize(status)
+  if (s === 'completed') return 'ready'
+  if (s === 'in review') return 'inProgress'
+  if (s === 'in progress') return 'inProgress'
+  if (s === 'cancelled') return 'cancelled'
+  if (s === 'error') return 'error'
+  if (s === 'failed') return 'error'
+  return 'attention'
+}
+
+function visitScribeTone(scribeStatus: string | null): ProfileDotTone {
+  const s = (scribeStatus ?? '').trim().toLowerCase()
+  if (!s) return 'neutral'
+  if (s.includes('error') || s.includes('fail')) return 'error'
+  if (s.includes('complete') || s.includes('saved')) return 'ready'
+  if (s.includes('progress') || s.includes('record') || s.includes('active')) return 'inProgress'
+  if (s.includes('stop') || s.includes('pause')) return 'neutral'
   return 'neutral'
 }
 
-function screeningTypeBadgeTone(raw: string | null): SummaryBadgeTone {
-  if (!raw) return 'neutral'
-  const s = raw.trim().toLowerCase()
-  if (s === 'web') return 'badge-indigo'
-  if (s === 'phone') return 'badge-teal'
-  return 'neutral'
+function profileIndicatorDotStyle(tone: 'attention' | 'inProgress' | 'cancelled' | 'neutral') {
+  if (tone === 'inProgress') return luminaStyles.statusDotInProgress
+  if (tone === 'cancelled' || tone === 'neutral') return luminaStyles.statusDotCancelled
+  return luminaStyles.statusDotAttention
 }
 
-function urgencyBadgeTone(label: string | null): SummaryBadgeTone {
-  if (!label) return 'neutral'
-  const s = label.trim().toLowerCase()
-  if (s.includes('high')) return 'urgency-high'
-  if (s.includes('medium')) return 'urgency-medium'
-  if (s.includes('low')) return 'urgency-low'
-  return 'neutral'
+function ProfileStatusIndicator({ tone }: { tone: ProfileDotTone }) {
+  if (tone === 'ready') {
+    return (
+      <View style={styles.profileIndicatorSlot}>
+        <Feather name="check" size={16} color={lumina.statusDotReady} />
+      </View>
+    )
+  }
+  if (tone === 'error') {
+    return (
+      <View style={styles.profileIndicatorSlot}>
+        <Feather name="x" size={16} color={lumina.statusDotError} />
+      </View>
+    )
+  }
+  if (tone === 'cancelled' || tone === 'neutral') {
+    return (
+      <View style={styles.profileIndicatorSlot}>
+        <View
+          style={[
+            luminaStyles.statusDot,
+            styles.profileIndicatorDot,
+            profileIndicatorDotStyle(tone),
+          ]}
+        />
+      </View>
+    )
+  }
+  if (tone === 'inProgress') {
+    return (
+      <View style={styles.profileIndicatorSlot}>
+        <View
+          style={[
+            luminaStyles.statusDot,
+            styles.profileIndicatorDot,
+            profileIndicatorDotStyle('inProgress'),
+          ]}
+        />
+      </View>
+    )
+  }
+  return (
+    <View style={styles.profileIndicatorSlot}>
+      <View
+        style={[
+          luminaStyles.statusDot,
+          styles.profileIndicatorDot,
+          profileIndicatorDotStyle('attention'),
+        ]}
+      />
+    </View>
+  )
+}
+
+function resolveUrgencyBadge(urgencyLabel: string | null): { label: string; tone: SummaryBadgeTone } {
+  const s = (urgencyLabel ?? '').trim().toLowerCase()
+  if (s.includes('high')) return { label: 'High urgency', tone: 'urgency-high' }
+  if (s.includes('medium')) return { label: 'Medium urgency', tone: 'urgency-medium' }
+  if (s.includes('low')) return { label: 'Low urgency', tone: 'badge-secondary' }
+  return { label: 'Unknown urgency', tone: 'badge-secondary' }
+}
+
+function UrgencyBadge({ urgencyLabel }: { urgencyLabel: string | null }) {
+  const { label, tone } = resolveUrgencyBadge(urgencyLabel)
+  return <SummaryBadge tone={tone} label={label} />
+}
+
+function urgencyRank(urgencyLabel: string | null): number {
+  const s = (urgencyLabel ?? '').trim().toLowerCase()
+  if (s.includes('high')) return 3
+  if (s.includes('medium')) return 2
+  if (s.includes('low')) return 1
+  return 0
 }
 
 export function PatientProfileScreen({ route, navigation }: Props) {
@@ -152,9 +235,26 @@ export function PatientProfileScreen({ route, navigation }: Props) {
     }
   }, [patientId])
 
+  const didMountFocusRef = useRef(false)
+  const loadRef = useRef(load)
+
+  useEffect(() => {
+    loadRef.current = load
+  }, [load])
+
   useEffect(() => {
     void load()
   }, [load])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!didMountFocusRef.current) {
+        didMountFocusRef.current = true
+        return
+      }
+      void loadRef.current()
+    }, [])
+  )
 
   const medicalGroups = useMemo(() => deriveMedicalHistoryGroups(profile?.medicalHistory), [profile?.medicalHistory])
 
@@ -171,12 +271,31 @@ export function PatientProfileScreen({ route, navigation }: Props) {
 
   const screeningRows = profile?.screenings ?? []
 
+  const headerUrgencyLabel = useMemo(() => {
+    let best: { label: string | null; rank: number } | null = null
+    for (const screening of screeningRows) {
+      const rank = urgencyRank(screening.urgencyLabel)
+      if (rank === 0) continue
+      if (!best || rank > best.rank) best = { label: screening.urgencyLabel, rank }
+    }
+    return best?.label ?? null
+  }, [screeningRows])
+
   return (
     <ScrollView
       testID="clinician-patient-profile-root"
       style={luminaStyles.screenTransparent}
       contentContainerStyle={styles.wrap}
     >
+      {!loading && !error && profile ? (
+        <View style={styles.headerRow}>
+          <Text style={[luminaStyles.largeTitle, styles.headerTitle]} numberOfLines={2}>
+            {profile.fullName}
+          </Text>
+          {headerUrgencyLabel ? <UrgencyBadge urgencyLabel={headerUrgencyLabel} /> : null}
+        </View>
+      ) : null}
+
       <Text style={styles.subtitle}>Identity, screenings, and visits.</Text>
 
       {loading ? <LoadingState label="Loading patient profile..." /> : null}
@@ -224,7 +343,7 @@ export function PatientProfileScreen({ route, navigation }: Props) {
                     key={group.title}
                     style={[styles.medicalGroup, index > 0 && styles.medicalGroupDivider]}
                   >
-                    <Text style={styles.sectionTitle}>{group.title}</Text>
+                    <Text style={luminaStyles.eyebrow}>{group.title}</Text>
                     {group.lines.length === 0 ? (
                       <Text style={styles.inlineEmpty}>None on file</Text>
                     ) : (
@@ -245,15 +364,15 @@ export function PatientProfileScreen({ route, navigation }: Props) {
           ) : null}
 
           {activeTab === 'history' ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Screening history</Text>
-              {screeningRows.length === 0 ? (
-                <EmptyState title="No screenings yet" body="Screenings will appear here once they are sent." />
-              ) : (
-                screeningRows.map((screening, index) => (
+            screeningRows.length === 0 ? (
+              <EmptyState title="No screenings yet" body="Screenings will appear here once they are sent." />
+            ) : (
+              <View style={styles.groupedList}>
+                {screeningRows.map((screening, index) => (
                   <ScreeningRow
                     key={screening.id}
                     item={screening}
+                    isFirst={index === 0}
                     isLast={index === screeningRows.length - 1}
                     onOpenSummary={() =>
                       navigation.navigate('ClinicianScreeningDetail', {
@@ -262,31 +381,37 @@ export function PatientProfileScreen({ route, navigation }: Props) {
                       })
                     }
                   />
-                ))
-              )}
-            </View>
+                ))}
+              </View>
+            )
           ) : null}
 
           {activeTab === 'visits' ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Visit history</Text>
-              {visitRows.length === 0 ? (
-                <EmptyState title="No visit history yet" body="Visit artifacts will appear here once available." />
-              ) : (
-                visitRows.map((screening, index) => {
-                  const fallback = screening.completedAt ?? screening.startedAt ?? screening.sentAt
-                  const when = fallback ? formatWhen(fallback) : 'Visit pending'
+            visitRows.length === 0 ? (
+              <EmptyState title="No visit history yet" body="Visit artifacts will appear here once available." />
+            ) : (
+              <View style={styles.groupedList}>
+                {visitRows.map((screening, index) => {
+                  const timestampLabel =
+                    formatListTimestamp(screening.completedAt) ||
+                    formatListTimestamp(screening.startedAt) ||
+                    formatListTimestamp(screening.sentAt)
+                  const isFirst = index === 0
+                  const isLast = index === visitRows.length - 1
                   return (
                     <Pressable
                       key={`visit-${screening.id}`}
                       style={({ pressed }) => [
-                        styles.row,
-                        index < visitRows.length - 1 && styles.rowDivider,
+                        styles.profileRow,
+                        isFirst && styles.profileRowFirst,
+                        isLast && styles.profileRowLast,
                         pressed && luminaStyles.pressedRow,
                       ]}
                       accessibilityRole="button"
                       accessibilityLabel={
-                        fallback ? `Open visit workspace from ${when}` : 'Open visit workspace, visit pending'
+                        timestampLabel
+                          ? `Open visit workspace from ${timestampLabel}`
+                          : 'Open visit workspace, visit pending'
                       }
                       onPress={() =>
                         navigation.navigate('ClinicianScreeningDetail', {
@@ -295,26 +420,29 @@ export function PatientProfileScreen({ route, navigation }: Props) {
                         })
                       }
                     >
-                      <View style={styles.rowHeader}>
-                        <View style={styles.rowHeaderLeft}>
-                          <View style={[luminaStyles.statusDot, toneDotStyle(visitRowTone(screening))]} />
-                          <Text style={luminaStyles.rowTitleStrong}>{when}</Text>
+                      <View style={styles.profileRowInner}>
+                        <View style={styles.profileRowMain}>
+                          <ProfileStatusIndicator tone={visitScribeTone(screening.scribeStatus)} />
+                          <View style={styles.profileTextCol}>
+                            <Text
+                              style={[luminaStyles.rowSubdued, styles.profilePreviewStrong]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {visitPreviewText(screening.visitSummary)}
+                            </Text>
+                            <Text style={luminaStyles.metaText}>
+                              {timestampLabel || 'Visit pending'}
+                            </Text>
+                          </View>
                         </View>
-                        <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
-                      </View>
-                      <View style={styles.chipCloud}>
-                        <SummaryBadge tone="neutral" label={screening.scribeStatus ?? 'Not started'} />
-                      </View>
-                      <View style={styles.rowPreviewContainer}>
-                        <Text style={styles.rowPreview} numberOfLines={2}>
-                          {screening.visitSummary ? screening.visitSummary : 'No visit summary yet.'}
-                        </Text>
+                        <Feather name="chevron-right" size={18} color={lumina.onSurfaceVariant} />
                       </View>
                     </Pressable>
                   )
-                })
-              )}
-            </View>
+                })}
+              </View>
+            )
           ) : null}
         </>
       ) : null}
@@ -324,44 +452,50 @@ export function PatientProfileScreen({ route, navigation }: Props) {
 
 function ScreeningRow({
   item,
-  isLast,
   onOpenSummary,
+  isFirst,
+  isLast,
 }: {
   item: ClinicianPatientProfileScreening
-  isLast: boolean
   onOpenSummary: () => void
+  isFirst: boolean
+  isLast: boolean
 }) {
-  const when = formatWhen(item.sentAt)
+  const timestampLabel =
+    formatListTimestamp(item.sentAt) ||
+    formatListTimestamp(item.completedAt) ||
+    formatListTimestamp(item.startedAt)
+  const tone = profileStatusTone(item.status)
+
   return (
     <Pressable
       testID={`clinician-patient-profile-screening-${item.id}`}
       style={({ pressed }) => [
-        styles.row,
-        !isLast && styles.rowDivider,
+        styles.profileRow,
+        isFirst && styles.profileRowFirst,
+        isLast && styles.profileRowLast,
         pressed && luminaStyles.pressedRow,
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`Open screening summary from ${when}`}
+      accessibilityLabel={`Open screening summary from ${timestampLabel || 'no date'}`}
       onPress={onOpenSummary}
     >
-      <View style={styles.rowHeader}>
-        <Text style={luminaStyles.rowTitleStrong}>{when}</Text>
-        <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
-      </View>
-      <View style={styles.chipCloud}>
-        <SummaryBadge tone={screeningStatusBadgeTone(item.status)} label={item.status} />
-        <SummaryBadge
-          tone={screeningTypeBadgeTone(item.screeningType)}
-          label={item.screeningType ?? 'Unknown'}
-        />
-        {item.urgencyLabel ? (
-          <SummaryBadge tone={urgencyBadgeTone(item.urgencyLabel)} label={item.urgencyLabel} />
-        ) : null}
-      </View>
-      <View style={styles.rowPreviewContainer}>
-        <Text style={styles.rowPreview} numberOfLines={2}>
-          {item.screeningSummary ? item.screeningSummary : 'No summary yet.'}
-        </Text>
+      <View style={styles.profileRowInner}>
+        <View style={styles.profileRowMain}>
+          <ProfileStatusIndicator tone={tone} />
+          <View style={styles.profileTextCol}>
+            <Text
+              style={[luminaStyles.rowSubdued, styles.profilePreviewStrong]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {historyPreviewText(item.screeningSummary)}
+            </Text>
+            {timestampLabel ? <Text style={luminaStyles.metaText}>{timestampLabel}</Text> : null}
+          </View>
+        </View>
+        {item.urgencyLabel ? <UrgencyBadge urgencyLabel={item.urgencyLabel} /> : null}
+        <Feather name="chevron-right" size={18} color={lumina.onSurfaceVariant} />
       </View>
     </Pressable>
   )
@@ -379,21 +513,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  card: {
-    borderRadius: 24,
-    backgroundColor: lumina.surfaceLowest,
-    padding: 14,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  cardTitle: {
+  headerTitle: {
+    flexShrink: 1,
+  },
+  groupedList: {
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    borderRadius: 16,
+    backgroundColor: lumina.surfaceLowest,
+    overflow: 'hidden',
+  },
+  profileRow: {
+    backgroundColor: lumina.surfaceLowest,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: lumina.outlineVariant,
+  },
+  profileRowFirst: {
+    borderTopWidth: 0,
+  },
+  profileRowLast: {},
+  profileRowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  profileRowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  profileTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  profilePreviewStrong: {
     color: lumina.onSurface,
-    fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.bodySemi,
+  },
+  profileIndicatorSlot: {
+    width: 28,
+    minHeight: 16,
+    marginRight: 0,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  profileIndicatorDot: {
+    marginRight: 0,
   },
   sectionTitle: {
     color: lumina.onSurface,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: luminaFonts.displaySemi,
   },
   summaryHeading: {
     marginTop: 8,
@@ -420,35 +601,6 @@ const styles = StyleSheet.create({
   inlineEmpty: {
     color: lumina.onSurfaceVariant,
     fontSize: 13,
-    fontFamily: luminaFonts.body,
-  },
-  row: {
-    paddingVertical: 12,
-    gap: 6,
-  },
-  rowDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F0F0F0',
-  },
-  rowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  rowHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rowPreviewContainer: {
-    backgroundColor: lumina.surfaceDim,
-    borderRadius: 12,
-    padding: 16,
-    gap: 6,
-  },
-  rowPreview: {
-    color: lumina.onSurface,
-    fontSize: 14,
-    lineHeight: 24,
     fontFamily: luminaFonts.body,
   },
 })
