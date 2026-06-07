@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, TextInput, AppState } from 'react-native'
+import { View, Text, Pressable, StyleSheet, ScrollView, TextInput, AppState } from 'react-native'
 import { Audio } from 'expo-av'
 import { v4 as uuidv4 } from 'uuid'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -26,10 +26,11 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Haptics from 'expo-haptics'
 import { ApiError } from '@/lib/apiClient'
 import { fetchAuthMe } from '@/api/auth'
-import { EmptyState, ErrorState } from '@/screens/shared/ScreenState'
+import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { MobileScreeningSummary } from '@/screens/clinician/components/summary/MobileScreeningSummary'
+import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
 import { MobileScribeHeroState } from '@/screens/clinician/components/scribe/MobileScribeHeroState'
 import { MobileScribeLivePanel, type LiveScribePhase } from '@/screens/clinician/components/scribe/MobileScribeLivePanel'
 import { MobileScribeProcessingPanel } from '@/screens/clinician/components/scribe/MobileScribeProcessingPanel'
@@ -356,6 +357,18 @@ function scribeHeaderStatusLabel(input: {
   return 'Ready'
 }
 
+function scribeHeaderStatusTone(input: {
+  scribe: ScribeUiState
+  isScribeLive: boolean
+  livePhase: LiveScribePhase
+}): SummaryBadgeTone {
+  const { scribe, isScribeLive, livePhase } = input
+  if (scribe === 'failed') return 'urgency-high'
+  if (isScribeLive && livePhase === 'recording') return 'highlight'
+  if (scribe === 'completed' || scribe === 'generated-review') return 'badge-teal'
+  return 'neutral'
+}
+
 export function ScreeningDetailScreen({ route }: Props) {
   const { screeningId, initialTab } = route.params
   const [activeTab, setActiveTab] = useState<TabKey>(() => tabFromRouteParam(initialTab))
@@ -380,6 +393,7 @@ export function ScreeningDetailScreen({ route }: Props) {
   const [savedVisitNote, setSavedVisitNote] = useState('')
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [visitNoteFocused, setVisitNoteFocused] = useState(false)
 
   useEffect(() => {
     setActiveTab(tabFromRouteParam(initialTab))
@@ -993,6 +1007,7 @@ export function ScreeningDetailScreen({ route }: Props) {
     isScribeLive,
     livePhase,
   })
+  const scribeHeaderTone = scribeHeaderStatusTone({ scribe, isScribeLive, livePhase })
 
   const transcriptReady = scribeChunkRows.length > 0
 
@@ -1004,10 +1019,10 @@ export function ScreeningDetailScreen({ route }: Props) {
       style={luminaStyles.screen}
       contentContainerStyle={styles.wrap}
     >
-      <Text style={styles.title}>{detailTitle}</Text>
+      <Text style={[luminaStyles.largeTitle, styles.title]}>{detailTitle}</Text>
         <Text style={styles.subtitle}>Summary, scribe, and visit notes.</Text>
 
-        {loading ? <ActivityIndicator color={lumina.primary} /> : null}
+        {loading ? <LoadingState label="Loading screening..." /> : null}
         {loadError ? <ErrorState body={loadError} onRetry={() => void refreshDetail()} /> : null}
         {actionError ? <Text style={luminaStyles.errorText}>{actionError}</Text> : null}
         {actionMessage ? <Text style={styles.info}>{actionMessage}</Text> : null}
@@ -1035,19 +1050,25 @@ export function ScreeningDetailScreen({ route }: Props) {
                 <Ionicons name="mic" size={18} color={lumina.onPrimary} />
               </View>
               <Text style={styles.scribeHeaderTitle}>Scribe session</Text>
-              <View style={styles.scribeHeaderPill}>
-                <Text style={styles.scribeHeaderPillText}>{scribeHeaderLabel}</Text>
-              </View>
+              <SummaryBadge label={scribeHeaderLabel} tone={scribeHeaderTone} />
             </View>
 
-            {scribeFlowError ? <Text style={luminaStyles.errorText}>{scribeFlowError}</Text> : null}
+            {scribeFlowError ? (
+              <View style={styles.scribeHeaderErrorPanel}>
+                <Ionicons name="alert-circle" size={16} color="#991B1B" />
+                <Text style={styles.scribeHeaderErrorText}>{scribeFlowError}</Text>
+              </View>
+            ) : null}
 
             {!canScribe ? (
               <>
-                <Text style={styles.cardBody}>Scribe state: {scribe}</Text>
-                <Text style={styles.cardBody}>Timer: {formatDuration(recordingElapsedMs)}</Text>
-                <Text style={styles.scribeMetaLine}>Chunks uploaded: {chunkCount}</Text>
-                <Text style={styles.scribeMetaLine}>Insights timeline rows: {timelineCount}</Text>
+                <View style={luminaStyles.inset}>
+                  <Text style={luminaStyles.eyebrow}>Diagnostics</Text>
+                  <Text style={styles.scribeMetaLine}>Scribe state: {scribe}</Text>
+                  <Text style={styles.scribeMetaLine}>Timer: {formatDuration(recordingElapsedMs)}</Text>
+                  <Text style={styles.scribeMetaLine}>Chunks uploaded: {chunkCount}</Text>
+                  <Text style={styles.scribeMetaLine}>Insights timeline rows: {timelineCount}</Text>
+                </View>
 
                 {scribeChunkRows.length > 0 ? (
                   <View style={styles.row}>
@@ -1135,7 +1156,7 @@ export function ScreeningDetailScreen({ route }: Props) {
             {showScribeRefreshFooter ? (
               <Pressable
                 style={({ pressed }) => [
-                  luminaStyles.secondaryButton,
+                  luminaStyles.primaryOutlineButton,
                   styles.scribeRefreshButton,
                   styles.scribeClusterSpacer,
                   pressed && luminaStyles.pressedButton,
@@ -1145,7 +1166,7 @@ export function ScreeningDetailScreen({ route }: Props) {
                   void runHydrateFromUi()
                 }}
               >
-                <Text style={luminaStyles.secondaryButtonText}>Refresh session data</Text>
+                <Text style={luminaStyles.primaryOutlineButtonText}>Refresh session data</Text>
               </Pressable>
             ) : null}
           </View>
@@ -1172,35 +1193,53 @@ export function ScreeningDetailScreen({ route }: Props) {
 
             <Text style={styles.fieldLabel}>New note</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, visitNoteFocused && luminaStyles.inputFocused]}
               value={visitNote}
               onChangeText={setVisitNote}
+              onFocus={() => setVisitNoteFocused(true)}
+              onBlur={() => setVisitNoteFocused(false)}
               multiline
               placeholder="Add clinician note"
-              placeholderTextColor={lumina.onSurfaceVariant}
+              placeholderTextColor={lumina.outline}
             />
             <Pressable
               style={({ pressed }) => [
                 luminaStyles.actionTintedButton,
-                !canSaveVisitNote ? styles.disabled : undefined,
+                !canSaveVisitNote ? styles.actionTintedButtonDisabled : undefined,
                 pressed && canSaveVisitNote && luminaStyles.pressedButton,
               ]}
               onPress={() => void runVisitNoteSave()}
               disabled={!canSaveVisitNote}
             >
-              <Text style={luminaStyles.actionTintedButtonText}>Save note</Text>
+              <Text
+                style={[
+                  luminaStyles.actionTintedButtonText,
+                  !canSaveVisitNote ? styles.actionTintedButtonDisabledText : undefined,
+                ]}
+              >
+                Save note
+              </Text>
             </Pressable>
 
             <Pressable
               style={({ pressed }) => [
                 luminaStyles.primaryButton,
-                visitStatus.status === 'finalized' || !visitStatus.canFinalize ? styles.disabled : undefined,
+                visitStatus.status === 'finalized' || !visitStatus.canFinalize
+                  ? luminaStyles.buttonDisabledTonal
+                  : undefined,
                 pressed && luminaStyles.pressedButton,
               ]}
               onPress={() => void runVisitFinalize()}
               disabled={visitStatus.status === 'finalized' || !visitStatus.canFinalize}
             >
-              <Text style={luminaStyles.primaryButtonText}>
+              <Text
+                style={[
+                  luminaStyles.primaryButtonText,
+                  visitStatus.status === 'finalized' || !visitStatus.canFinalize
+                    ? luminaStyles.buttonDisabledTonalText
+                    : undefined,
+                ]}
+              >
                 {visitStatus.status === 'finalized' ? 'Visit finalized' : 'Finalize visit'}
               </Text>
             </Pressable>
@@ -1219,8 +1258,6 @@ const styles = StyleSheet.create({
   },
   title: {
     color: lumina.onSurface,
-    fontSize: 26,
-    fontWeight: '700',
   },
   subtitle: {
     color: lumina.onSurfaceVariant,
@@ -1232,15 +1269,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   card: {
-    borderRadius: 24,
-    backgroundColor: lumina.surfaceLowest,
+    ...luminaStyles.card,
     padding: 14,
     gap: 8,
   },
   sectionTitle: {
     color: lumina.onSurface,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: luminaFonts.display,
   },
   cardBody: {
     color: lumina.onSurfaceVariant,
@@ -1259,17 +1295,11 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   input: {
-    borderRadius: 16,
+    ...luminaStyles.input,
     minHeight: 44,
-    padding: 12,
-    backgroundColor: lumina.surface,
-    color: lumina.onSurface,
   },
   row: {
-    gap: 8,
-    borderRadius: 16,
-    backgroundColor: lumina.surface,
-    padding: 10,
+    ...luminaStyles.inset,
   },
   bulletRow: {
     flexDirection: 'row',
@@ -1309,16 +1339,20 @@ const styles = StyleSheet.create({
     fontFamily: luminaFonts.displaySemi,
     fontSize: 18,
   },
-  scribeHeaderPill: {
-    backgroundColor: lumina.secondaryContainer,
-    borderRadius: 999,
+  scribeHeaderErrorPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 10,
   },
-  scribeHeaderPillText: {
-    color: lumina.onSecondaryContainer,
-    fontFamily: luminaFonts.bodySemi,
-    fontSize: 12,
+  scribeHeaderErrorText: {
+    flex: 1,
+    color: '#991B1B',
+    fontSize: 13,
+    fontFamily: luminaFonts.bodyMedium,
   },
   scribeRefreshButton: {
     alignSelf: 'stretch',
@@ -1337,7 +1371,10 @@ const styles = StyleSheet.create({
   emptyNoteText: {
     fontStyle: 'italic',
   },
-  disabled: {
-    opacity: 0.6,
+  actionTintedButtonDisabled: {
+    backgroundColor: lumina.secondaryContainer,
+  },
+  actionTintedButtonDisabledText: {
+    color: lumina.onSurfaceVariant,
   },
 })

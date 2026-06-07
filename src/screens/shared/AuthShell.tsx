@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -48,22 +49,30 @@ export function AuthShell({
                 }}
                 disabled={loading === true}
               >
-                <Text style={styles.backText}>Back</Text>
+                <Ionicons name="chevron-back" size={20} color={lumina.onSurfaceVariant} />
               </SpringPressable>
             ) : null}
+            <Text style={luminaStyles.eyebrow}>Bubbl</Text>
             <Text style={styles.title}>{title}</Text>
             {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
           </View>
 
           {loading ? <LoadingState label="Please wait…" /> : null}
 
-          {error ? <Text style={luminaStyles.errorText}>{error}</Text> : null}
+          {error ? (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={18} color="#991B1B" />
+              <Text style={styles.errorContainerText}>{error}</Text>
+            </View>
+          ) : null}
 
           {showSocialSection ? (
             <>
               <View pointerEvents={loading ? 'none' : 'auto'}>{socialSlot}</View>
-              <View style={styles.separatorPill}>
+              <View style={styles.separatorRow}>
+                <View style={styles.separatorRule} />
                 <Text style={styles.separatorText}>or continue with email</Text>
+                <View style={styles.separatorRule} />
               </View>
             </>
           ) : null}
@@ -142,19 +151,18 @@ const styles = StyleSheet.create({
   },
   back: {
     alignSelf: 'flex-start',
+    width: 36,
+    height: 36,
     borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  backText: {
-    color: lumina.onSurfaceVariant,
-    fontFamily: luminaFonts.bodySemi,
-    fontSize: 14,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     color: lumina.onSurface,
-    fontSize: 26,
+    fontSize: 32,
     fontFamily: luminaFonts.display,
   },
   subtitle: {
@@ -163,12 +171,30 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontFamily: luminaFonts.body,
   },
-  separatorPill: {
-    alignSelf: 'center',
-    borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
-    paddingVertical: 6,
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingVertical: 10,
     paddingHorizontal: 12,
+  },
+  errorContainerText: {
+    flex: 1,
+    color: '#991B1B',
+    fontSize: 13,
+    fontFamily: luminaFonts.bodyMedium,
+  },
+  separatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  separatorRule: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: lumina.outlineVariant,
   },
   separatorText: {
     color: lumina.onSurfaceVariant,

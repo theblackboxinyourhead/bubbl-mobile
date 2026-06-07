@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View, type ListRenderItem } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
-import { Feather } from '@expo/vector-icons'
+import { Ionicons } from '@expo/vector-icons'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import {
   listScreeningsForClinician,
@@ -26,65 +26,6 @@ const QUEUE_FILTER_TABS: readonly SegmentedControlTab<QueueFilter>[] = [
 ]
 
 const PAGE_SIZE = 30
-
-function normalize(value: string): string {
-  return value.trim().toLowerCase()
-}
-
-type QueueDotTone = 'ready' | 'inProgress' | 'attention' | 'error' | 'cancelled'
-
-function queueRowTone(status: string): QueueDotTone {
-  const s = normalize(status)
-  if (s === 'completed') return 'ready'
-  if (s === 'in review') return 'inProgress'
-  if (s === 'in progress') return 'inProgress'
-  if (s === 'cancelled') return 'cancelled'
-  if (s === 'error') return 'error'
-  if (s === 'failed') return 'error'
-  return 'attention'
-}
-
-function toneDotStyle(tone: 'attention' | 'inProgress' | 'cancelled') {
-  if (tone === 'inProgress') return luminaStyles.statusDotInProgress
-  if (tone === 'cancelled') return luminaStyles.statusDotCancelled
-  return luminaStyles.statusDotAttention
-}
-
-function QueueStatusIndicator({ tone }: { tone: QueueDotTone }) {
-  if (tone === 'ready') {
-    return (
-      <View style={styles.queueStatusIndicatorSlot}>
-        <Feather name="check" size={16} color={lumina.statusDotReady} />
-      </View>
-    )
-  }
-  if (tone === 'error') {
-    return (
-      <View style={styles.queueStatusIndicatorSlot}>
-        <Feather name="x" size={16} color={lumina.statusDotError} />
-      </View>
-    )
-  }
-  if (tone === 'cancelled') {
-    return (
-      <View style={styles.queueStatusIndicatorSlot}>
-        <View style={[luminaStyles.statusDot, styles.queueStatusDot, toneDotStyle('cancelled')]} />
-      </View>
-    )
-  }
-  if (tone === 'inProgress') {
-    return (
-      <View style={styles.queueStatusIndicatorSlot}>
-        <View style={[luminaStyles.statusDot, styles.queueStatusDot, toneDotStyle('inProgress')]} />
-      </View>
-    )
-  }
-  return (
-    <View style={styles.queueStatusIndicatorSlot}>
-      <View style={[luminaStyles.statusDot, styles.queueStatusDot, toneDotStyle('attention')]} />
-    </View>
-  )
-}
 
 export function IntakeQueueScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true)
@@ -194,17 +135,20 @@ export function IntakeQueueScreen({ navigation }: Props) {
 
   const headerNode = useMemo(
     () => (
-      <>
-        <TextInput
-          testID="clinician-intake-search-input"
-          style={[luminaStyles.input, searchFocused && luminaStyles.inputFocused]}
-          value={search}
-          onChangeText={setSearch}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          placeholder="Search by patient, phone, or status"
-          placeholderTextColor={lumina.onSurfaceVariant}
-        />
+      <View style={styles.listHeader}>
+        <View style={[styles.searchField, searchFocused && luminaStyles.inputFocused]}>
+          <Ionicons name="search" size={18} color={lumina.onSurfaceVariant} style={styles.searchIcon} />
+          <TextInput
+            testID="clinician-intake-search-input"
+            style={styles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            placeholder="Search by patient, phone, or status"
+            placeholderTextColor={lumina.outline}
+          />
+        </View>
 
         <SegmentedControl
           tabs={QUEUE_FILTER_TABS}
@@ -217,18 +161,22 @@ export function IntakeQueueScreen({ navigation }: Props) {
 
         {loading ? <LoadingState label="Loading screenings..." /> : null}
         {error ? <ErrorState body={error} onRetry={() => void loadReset()} /> : null}
-      </>
+      </View>
     ),
     [search, searchFocused, filter, loading, error, loadReset]
   )
 
   const renderItem = useCallback<ListRenderItem<ClinicianScreeningQueueItem>>(
-    ({ item: row }) => {
+    ({ item: row, index }) => {
       const sentLabel = formatListTimestamp(row.sentAt)
+      const isFirst = index === 0
+      const isLast = index === rows.length - 1
       return (
         <View
           style={[
             styles.queueRow,
+            isFirst && styles.queueRowFirst,
+            isLast && styles.queueRowLast,
             { backgroundColor: row.isUnread ? lumina.surfaceDim : lumina.surfaceLowest },
           ]}
         >
@@ -241,27 +189,39 @@ export function IntakeQueueScreen({ navigation }: Props) {
           >
             <View style={styles.queueRowInner}>
               <View style={styles.queueRowLeft}>
-                <QueueStatusIndicator tone={queueRowTone(row.status)} />
                 <View style={styles.queueTextCol}>
                   <Text style={luminaStyles.rowTitleStrong} numberOfLines={1} ellipsizeMode="tail">
                     {row.patientName}
                   </Text>
-                  {sentLabel ? <Text style={luminaStyles.metaText}>{sentLabel}</Text> : null}
+                  <View style={styles.queueMetaRow}>
+                    {sentLabel ? <Text style={luminaStyles.metaText}>{sentLabel}</Text> : null}
+                    <ScribeStatusOutlinePill scribeStatus={row.scribeStatus} />
+                  </View>
                 </View>
               </View>
-              <ScribeStatusOutlinePill scribeStatus={row.scribeStatus} />
+              {row.isUnread ? (
+                <View style={[luminaStyles.newBadge, styles.queueNewBadge]}>
+                  <Text style={luminaStyles.newBadgeText}>New</Text>
+                </View>
+              ) : null}
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={lumina.onSurfaceVariant}
+                style={styles.queueChevron}
+              />
             </View>
           </Pressable>
         </View>
       )
     },
-    [openSummary]
+    [openSummary, rows.length]
   )
 
   return (
     <FlatList
       style={luminaStyles.screenTransparent}
-      contentContainerStyle={[luminaStyles.pageContent, styles.queueList]}
+      contentContainerStyle={styles.queueList}
       data={rows}
       keyExtractor={(row) => row.id}
       renderItem={renderItem}
@@ -271,6 +231,7 @@ export function IntakeQueueScreen({ navigation }: Props) {
       keyboardShouldPersistTaps="handled"
       onEndReached={() => void loadMore()}
       onEndReachedThreshold={0.4}
+      ItemSeparatorComponent={QueueSeparator}
       ListHeaderComponent={headerNode}
       ListFooterComponent={loadingMore ? <LoadingState label="Loading more screenings..." /> : null}
       ListEmptyComponent={
@@ -282,20 +243,63 @@ export function IntakeQueueScreen({ navigation }: Props) {
   )
 }
 
+function QueueSeparator() {
+  return <View style={styles.queueSeparator} />
+}
+
 const styles = StyleSheet.create({
   queueList: {
-    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 36,
+  },
+  listHeader: {
+    gap: 16,
+    marginBottom: 16,
+  },
+  searchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    color: lumina.onSurface,
   },
   queueRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    borderRadius: 10,
-    overflow: 'hidden',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: lumina.outlineVariant,
+  },
+  queueRowFirst: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  queueRowLast: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  queueSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: lumina.outlineVariant,
+    marginLeft: 12,
   },
   queueRowMain: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
   queueRowInner: {
     flexDirection: 'row',
@@ -311,16 +315,18 @@ const styles = StyleSheet.create({
   queueTextCol: {
     flex: 1,
     minWidth: 0,
-    gap: 3,
+    gap: 4,
   },
-  queueStatusIndicatorSlot: {
-    width: 24,
-    minHeight: 16,
-    marginRight: 0,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+  queueMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
   },
-  queueStatusDot: {
-    marginRight: 0,
+  queueNewBadge: {
+    alignSelf: 'center',
+  },
+  queueChevron: {
+    marginLeft: 4,
   },
 })

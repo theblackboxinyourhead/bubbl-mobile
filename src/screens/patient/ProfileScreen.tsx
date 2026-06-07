@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import Constants from 'expo-constants'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
@@ -36,6 +38,7 @@ type ProfileData = {
 }
 
 export function ProfileScreen({ onSignOut }: Props) {
+  const insets = useSafeAreaInsets()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ProfileData | null>(null)
@@ -134,7 +137,7 @@ export function ProfileScreen({ onSignOut }: Props) {
   const fullName = data ? `${data.firstName} ${data.lastName}`.trim() || null : null
 
   return (
-    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={[luminaStyles.pageContent, { paddingTop: insets.top + 14 }]}>
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {error && !data ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && data ? <ErrorState title="Refresh failed" body={error} onRetry={() => void refresh()} /> : null}
@@ -144,6 +147,23 @@ export function ProfileScreen({ onSignOut }: Props) {
 
       {data ? (
         <>
+          <Text style={luminaStyles.largeTitle}>Profile</Text>
+          <View style={styles.identityHeader}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{getInitials(fullName, data.email)}</Text>
+            </View>
+            <View style={styles.identityTextCol}>
+              <Text style={styles.identityName}>{fullName ?? data.email}</Text>
+              <View style={styles.identityBadges}>
+                <SummaryBadge tone="badge-blue" label="Patient" />
+                <SummaryBadge
+                  tone={data.consent.hasConsent ? 'badge-green' : 'badge-gray'}
+                  label={data.consent.hasConsent ? 'Consent granted' : 'No consent'}
+                />
+              </View>
+            </View>
+          </View>
+
           <SummarySectionCard title="Account identity" icon="person-outline">
             <InlineWrapRow emphasize label="Name" value={fullName} />
             <InlineWrapRow label="Email" value={data.email} />
@@ -175,14 +195,38 @@ export function ProfileScreen({ onSignOut }: Props) {
           </SummarySectionCard>
 
           <SummarySectionCard title="Account actions" icon="log-out-outline">
-            <Pressable testID="sign-out-button" style={luminaStyles.primaryButton} onPress={() => void onSignOut()}>
+            <Pressable
+              testID="sign-out-button"
+              style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+              onPress={() => void onSignOut()}
+            >
               <Text style={luminaStyles.primaryButtonText}>Sign out</Text>
             </Pressable>
           </SummarySectionCard>
 
           <SummarySectionCard title="Support" icon="help-circle-outline">
-            {data.supportEmail ? <InlineWrapRow label="Email" value={data.supportEmail} /> : null}
-            {data.supportPhone ? <InlineWrapRow label="Phone" value={data.supportPhone} /> : null}
+            {data.supportEmail ? (
+              <Pressable
+                style={({ pressed }) => [styles.contactRow, pressed && luminaStyles.pressedRow]}
+                onPress={() => void Linking.openURL(`mailto:${data.supportEmail}`)}
+                accessibilityRole="link"
+                accessibilityLabel={`Email support at ${data.supportEmail}`}
+              >
+                <Ionicons name="mail-outline" size={18} color={lumina.primary} />
+                <Text style={styles.contactText}>{data.supportEmail}</Text>
+              </Pressable>
+            ) : null}
+            {data.supportPhone ? (
+              <Pressable
+                style={({ pressed }) => [styles.contactRow, pressed && luminaStyles.pressedRow]}
+                onPress={() => void Linking.openURL(`tel:${data.supportPhone}`)}
+                accessibilityRole="link"
+                accessibilityLabel={`Call support at ${data.supportPhone}`}
+              >
+                <Ionicons name="call-outline" size={18} color={lumina.primary} />
+                <Text style={styles.contactText}>{data.supportPhone}</Text>
+              </Pressable>
+            ) : null}
             {!data.supportEmail && !data.supportPhone ? (
               <SummaryEmptyState label="No support contacts on file." />
             ) : null}
@@ -197,6 +241,16 @@ export function ProfileScreen({ onSignOut }: Props) {
       ) : null}
     </ScrollView>
   )
+}
+
+function getInitials(fullName: string | null, email: string): string {
+  if (fullName) {
+    const parts = fullName.split(/\s+/).filter(Boolean)
+    const initials = parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
+    if (initials) return initials
+  }
+  const emailInitial = email.trim().charAt(0).toUpperCase()
+  return emailInitial || '?'
 }
 
 function formatPhoneForDisplay(value: string | null | undefined): string | null {
@@ -232,6 +286,51 @@ function InlineWrapRow({
 }
 
 const styles = StyleSheet.create({
+  identityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: lumina.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: lumina.primary,
+    fontSize: 20,
+    fontFamily: luminaFonts.display,
+  },
+  identityTextCol: {
+    flex: 1,
+    gap: 6,
+  },
+  identityName: {
+    color: lumina.onSurface,
+    fontSize: 18,
+    fontFamily: luminaFonts.display,
+  },
+  identityBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+    paddingVertical: 8,
+  },
+  contactText: {
+    flex: 1,
+    color: lumina.onSurface,
+    fontSize: 15,
+    fontFamily: luminaFonts.body,
+  },
   footer: {
     paddingVertical: 24,
     alignItems: 'center',

@@ -11,7 +11,8 @@ if (__DEV__) { require('./src/devtools/reactotron') }
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
-import { AppState, View, ActivityIndicator, StyleSheet, type AppStateStatus } from 'react-native'
+import { AppState, View, Text, ActivityIndicator, StyleSheet, type AppStateStatus } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { NavigationContainer } from '@react-navigation/native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -714,7 +715,8 @@ export default function App() {
   if (!fontsLoaded || !ready) {
     return (
       <View style={styles.boot}>
-        <ActivityIndicator size="large" />
+        <Text style={styles.bootMark}>Bubbl</Text>
+        <ActivityIndicator size="large" color={lumina.primary} />
       </View>
     )
   }
@@ -757,7 +759,13 @@ export default function App() {
               />
               <StatusBar style="dark" />
             </NavigationContainer>
-            {appState !== 'active' ? <View style={styles.privacyOverlay} /> : null}
+            {appState !== 'active' ? (
+              <View style={styles.privacyOverlay}>
+                <Ionicons name="lock-closed" size={28} color={lumina.primaryFixed} />
+                <Text style={styles.privacyMark}>Bubbl</Text>
+                <Text style={styles.privacyNote}>Protected</Text>
+              </View>
+            ) : null}
           </View>
         </SessionProvider>
       </SafeAreaProvider>
@@ -767,11 +775,39 @@ export default function App() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  boot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  boot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    backgroundColor: lumina.surface,
+  },
+  bootMark: {
+    color: lumina.primary,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
   privacyOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: lumina.onSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     zIndex: 99999,
     elevation: 99999,
+  },
+  privacyMark: {
+    color: lumina.onPrimary,
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  privacyNote: {
+    color: lumina.primaryFixed,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 })

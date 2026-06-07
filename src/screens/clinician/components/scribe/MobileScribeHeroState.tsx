@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 import { MobileScribeVoiceBars } from '@/screens/clinician/components/scribe/MobileScribeVoiceBars'
@@ -14,6 +15,7 @@ type Props = {
 }
 
 const IDLE_BARS = [12, 20, 14, 24, 16, 22, 12] as const
+const IDLE_BARS_ACTIVE = [20, 14, 24, 16, 22, 12, 20] as const
 const FAILED_BARS = [8, 12, 8, 14, 8, 12, 8] as const
 
 export function MobileScribeHeroState({ variant, onStart, sessionId = null, onRecoverTranscript }: Props) {
@@ -27,9 +29,14 @@ export function MobileScribeHeroState({ variant, onStart, sessionId = null, onRe
     <View style={styles.hero}>
       <View style={styles.outerRing}>
         {isIdle ? (
-          <View style={[styles.innerOrb, styles.innerOrbIdle]}>
+          <LinearGradient
+            colors={['#006B66', '#10B981']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.innerOrb, styles.innerOrbIdle]}
+          >
             <Ionicons name="mic" size={32} color={lumina.onPrimary} />
-          </View>
+          </LinearGradient>
         ) : (
           <View style={[styles.innerOrb, styles.innerOrbFailed]}>
             <Ionicons name="warning" size={30} color={lumina.statusDotAttention} />
@@ -40,7 +47,16 @@ export function MobileScribeHeroState({ variant, onStart, sessionId = null, onRe
       <MobileScribeVoiceBars
         heights={isIdle ? IDLE_BARS : FAILED_BARS}
         barColor={isIdle ? lumina.primary : lumina.statusDotAttention}
+        activeHeights={isIdle ? IDLE_BARS_ACTIVE : undefined}
+        animated={isIdle}
       />
+
+      {isIdle ? (
+        <View style={styles.readyPill}>
+          <View style={styles.readyDot} />
+          <Text style={styles.readyPillText}>Ready to capture</Text>
+        </View>
+      ) : null}
 
       <Text style={styles.heroTitle}>{title}</Text>
       <Text style={styles.heroSubtitle}>{subtitle}</Text>
@@ -95,6 +111,11 @@ const styles = StyleSheet.create({
     backgroundColor: lumina.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: lumina.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 6,
   },
   innerOrb: {
     width: 80,
@@ -105,6 +126,28 @@ const styles = StyleSheet.create({
   },
   innerOrbIdle: {
     backgroundColor: lumina.primary,
+  },
+  readyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    borderRadius: 999,
+    backgroundColor: lumina.primaryFixed,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  readyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: lumina.onPrimaryContainer,
+  },
+  readyPillText: {
+    color: lumina.onPrimaryContainer,
+    fontFamily: luminaFonts.bodySemi,
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
   innerOrbFailed: {
     backgroundColor: lumina.surfaceDim,

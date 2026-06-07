@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, ScrollView } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ClinicianStackParamList } from '@/navigation/RootNavigator'
 import {
@@ -9,7 +10,8 @@ import {
   type CompanyAddress,
   type CompanyAddressPrediction,
 } from '@/api/auth'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
+import { LoadingState } from '@/screens/shared/ScreenState'
 
 type Props = NativeStackScreenProps<ClinicianStackParamList, 'ClinicianCompanyRegistration'> & {
   onResolved: () => Promise<void> | void
@@ -162,9 +164,8 @@ export function ClinicianCompanyRegistrationScreen({ onResolved }: Props) {
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
       <View style={styles.card}>
-        <Text style={styles.title}>Complete company setup</Text>
-        <Text style={styles.body}>Finish clinician registration by adding your company details.</Text>
-        {error ? <Text style={luminaStyles.errorText}>{error}</Text> : null}
+        <Text style={luminaStyles.title}>Complete company setup</Text>
+        <Text style={[styles.body, styles.bodySpacing]}>Finish clinician registration by adding your company details.</Text>
 
         <Text style={luminaStyles.label}>Company name</Text>
         <TextInput
@@ -172,7 +173,7 @@ export function ClinicianCompanyRegistrationScreen({ onResolved }: Props) {
           value={companyName}
           onChangeText={setCompanyName}
           placeholder="Acme Clinic"
-          placeholderTextColor={lumina.onSurfaceVariant}
+          placeholderTextColor={lumina.outline}
         />
 
         <Text style={luminaStyles.label}>Company phone</Text>
@@ -182,7 +183,7 @@ export function ClinicianCompanyRegistrationScreen({ onResolved }: Props) {
           onChangeText={onChangePhone}
           keyboardType="phone-pad"
           placeholder="(555) 123-4567"
-          placeholderTextColor={lumina.onSurfaceVariant}
+          placeholderTextColor={lumina.outline}
         />
 
         <Text style={luminaStyles.label}>Address</Text>
@@ -191,9 +192,9 @@ export function ClinicianCompanyRegistrationScreen({ onResolved }: Props) {
           value={addressQuery}
           onChangeText={onChangeAddressQuery}
           placeholder="Start typing your address..."
-          placeholderTextColor={lumina.onSurfaceVariant}
+          placeholderTextColor={lumina.outline}
         />
-        {addressLoading ? <ActivityIndicator color={lumina.primary} style={styles.addressLoading} /> : null}
+        {addressLoading ? <LoadingState label="Finding addresses..." /> : null}
         {addressPredictions.length > 0 ? (
           <View style={styles.predictionList}>
             {addressPredictions.map((prediction) => (
@@ -202,15 +203,27 @@ export function ClinicianCompanyRegistrationScreen({ onResolved }: Props) {
                 style={({ pressed }) => [styles.predictionRow, pressed && luminaStyles.pressedRow]}
                 onPress={() => void onSelectPrediction(prediction)}
               >
+                <Ionicons name="location" size={16} color={lumina.primary} />
                 <Text style={styles.predictionText}>{prediction.description}</Text>
               </Pressable>
             ))}
           </View>
         ) : null}
 
-        <Pressable style={luminaStyles.primaryButton} onPress={() => void submit()} disabled={busy}>
+        {error ? (
+          <View style={styles.errorPanel}>
+            <Ionicons name="alert-circle" size={18} color="#991B1B" />
+            <Text style={styles.errorPanelText}>{error}</Text>
+          </View>
+        ) : null}
+
+        <Pressable
+          style={[luminaStyles.primaryButton, busy && luminaStyles.buttonDisabledTonal]}
+          onPress={() => void submit()}
+          disabled={busy}
+        >
           {busy ? (
-            <ActivityIndicator color={lumina.onPrimary} />
+            <ActivityIndicator color={lumina.onSurfaceVariant} />
           ) : (
             <Text style={luminaStyles.primaryButtonText}>Save and continue</Text>
           )}
@@ -226,15 +239,8 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   card: {
-    borderRadius: 28,
-    backgroundColor: lumina.surfaceLow,
-    padding: 18,
+    ...luminaStyles.card,
     gap: 10,
-  },
-  title: {
-    color: lumina.onSurface,
-    fontSize: 24,
-    fontWeight: '700',
   },
   body: {
     color: lumina.onSurfaceVariant,
@@ -242,22 +248,42 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 4,
   },
-  addressLoading: {
-    alignSelf: 'flex-start',
+  bodySpacing: {
+    marginTop: 8,
   },
   predictionList: {
-    borderRadius: 12,
-    backgroundColor: lumina.surfaceLowest,
-    borderWidth: 1,
-    borderColor: lumina.outlineVariant,
-    overflow: 'hidden',
+    ...luminaStyles.card,
+    padding: 0,
+    gap: 0,
+    borderRadius: 14,
   },
   predictionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
   predictionText: {
+    flex: 1,
     color: lumina.onSurface,
     fontSize: 15,
+    fontFamily: luminaFonts.body,
+  },
+  errorPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  errorPanelText: {
+    flex: 1,
+    color: '#991B1B',
+    fontSize: 13,
+    fontFamily: luminaFonts.bodyMedium,
   },
 })

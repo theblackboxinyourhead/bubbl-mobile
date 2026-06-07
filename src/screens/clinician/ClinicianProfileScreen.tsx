@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native'
 import Constants from 'expo-constants'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
@@ -56,6 +57,7 @@ function formatPhoneForDisplay(value: string | null | undefined): string | null 
 }
 
 export function ClinicianProfileScreen({ onSignOut }: Props) {
+  const insets = useSafeAreaInsets()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState<string | null>(null)
@@ -115,7 +117,7 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
           : 'Not enabled'
   const inboundAdminStatusTone: SummaryBadgeTone =
     inboundStatus === 'enabled'
-      ? 'badge-green'
+      ? 'highlight'
       : inboundStatus === 'blocked'
         ? 'badge-red'
         : inboundStatus === 'needs_attention'
@@ -123,12 +125,21 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
           : 'badge-gray'
 
   return (
-    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={[luminaStyles.pageContent, { paddingTop: insets.top + 14 }]}>
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {error ? <ErrorState body={error} onRetry={() => void load()} /> : null}
 
       {!loading && !error ? (
         <>
+          <View style={styles.identityHeader}>
+            {settings?.clinic.name ? (
+              <Text style={luminaStyles.eyebrow}>{settings.clinic.name}</Text>
+            ) : null}
+            <Text style={luminaStyles.largeTitle}>
+              {formatFullName(settings?.provider.firstName ?? '', settings?.provider.lastName ?? '') ?? 'Profile'}
+            </Text>
+          </View>
+
           <SummarySectionCard title="Profile" icon="person-outline">
             <InlineWrapRow
               emphasize
@@ -184,8 +195,20 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
           </SummarySectionCard>
 
           <SummarySectionCard title="Support" icon="help-circle-outline">
-            {supportEmail ? <InlineWrapRow label="Email" value={supportEmail} /> : null}
-            {supportPhone ? <InlineWrapRow label="Phone" value={supportPhone} /> : null}
+            {supportEmail ? (
+              <ContactRow
+                label="Email"
+                value={supportEmail}
+                onPress={() => void Linking.openURL(`mailto:${supportEmail}`)}
+              />
+            ) : null}
+            {supportPhone ? (
+              <ContactRow
+                label="Phone"
+                value={supportPhone}
+                onPress={() => void Linking.openURL(`tel:${supportPhone.replace(/[^\d+]/g, '')}`)}
+              />
+            ) : null}
             {!supportEmail && !supportPhone ? (
               <SummaryEmptyState label="No support contacts on file." />
             ) : null}
@@ -193,7 +216,11 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
         </>
       ) : null}
 
-      <Pressable testID="sign-out-button" style={luminaStyles.primaryButton} onPress={() => void onSignOut()}>
+      <Pressable
+        testID="sign-out-button"
+        style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+        onPress={() => void onSignOut()}
+      >
         <Text style={luminaStyles.primaryButtonText}>Sign out</Text>
       </Pressable>
 
@@ -203,6 +230,27 @@ export function ClinicianProfileScreen({ onSignOut }: Props) {
         </Text>
       </View>
     </ScrollView>
+  )
+}
+
+function ContactRow({
+  label,
+  value,
+  onPress,
+}: {
+  label: string
+  value: string
+  onPress: () => void
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.contactRow, pressed && luminaStyles.pressedRow]}
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel={`${label}: ${value}`}
+    >
+      <SummaryDataRow inline label={label} value={value} />
+    </Pressable>
   )
 }
 
@@ -225,6 +273,17 @@ function InlineWrapRow({
 }
 
 const styles = StyleSheet.create({
+  identityHeader: {
+    gap: 4,
+  },
+  contactRow: {
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    marginHorizontal: -8,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
   footer: {
     paddingVertical: 24,
     alignItems: 'center',

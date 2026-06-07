@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, ScrollView } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { sendOtp } from '@/api/auth'
@@ -49,25 +50,45 @@ export function InviteEntryScreen({ navigation, route }: Props) {
             : 'Paste the screening invite ID from your clinic link.'}
         </Text>
 
-        {!fromLink ? (
+        {fromLink ? (
+          <View style={[luminaStyles.card, styles.contextCard]}>
+            <View style={styles.medallion}>
+              <Ionicons name="shield-checkmark" size={22} color={lumina.primary} />
+            </View>
+            <View style={styles.contextBody}>
+              <View style={luminaStyles.newBadge}>
+                <Text style={luminaStyles.newBadgeText}>Invite</Text>
+              </View>
+              <Text style={styles.contextText}>Clinic invite linked to your visit.</Text>
+              <Text style={luminaStyles.metaText}>
+                Invite ref · {screeningId.slice(0, 8)}…{screeningId.slice(-4)}
+              </Text>
+            </View>
+          </View>
+        ) : (
           <TextInput
             testID="patient-invite-id-input"
             value={manual}
             onChangeText={setManual}
             placeholder="Screening ID from your link"
-            placeholderTextColor={lumina.onSurfaceVariant}
+            placeholderTextColor={lumina.outline}
             style={luminaStyles.input}
             autoCapitalize="none"
           />
-        ) : null}
+        )}
 
-        {err ? <Text style={luminaStyles.errorText}>{err}</Text> : null}
+        {err ? (
+          <View style={styles.errorPanel}>
+            <Ionicons name="alert-circle" size={18} color="#991B1B" />
+            <Text style={styles.errorPanelText}>{err}</Text>
+          </View>
+        ) : null}
         <Pressable
           testID="patient-invite-send-code-button"
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,
-            (!screeningId || busy) && luminaStyles.primaryButtonDisabled,
+            (!screeningId || busy) && luminaStyles.buttonDisabledTonal,
           ]}
           disabled={!screeningId || busy}
           onPress={() => void goVerify()}
@@ -75,7 +96,14 @@ export function InviteEntryScreen({ navigation, route }: Props) {
           {busy ? (
             <ActivityIndicator color={lumina.onPrimary} />
           ) : (
-            <Text style={luminaStyles.primaryButtonText}>{fromLink ? 'Continue' : 'Send code'}</Text>
+            <Text
+              style={[
+                luminaStyles.primaryButtonText,
+                (!screeningId || busy) && luminaStyles.buttonDisabledTonalText,
+              ]}
+            >
+              {fromLink ? 'Continue' : 'Send code'}
+            </Text>
           )}
         </Pressable>
       </View>
@@ -100,5 +128,42 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontFamily: luminaFonts.body,
+  },
+  contextCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  medallion: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: lumina.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contextBody: {
+    flex: 1,
+    gap: 6,
+  },
+  contextText: {
+    color: lumina.onSurface,
+    fontSize: 14,
+    fontFamily: luminaFonts.bodyMedium,
+  },
+  errorPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  errorPanelText: {
+    flex: 1,
+    color: '#991B1B',
+    fontSize: 13,
+    fontFamily: luminaFonts.bodyMedium,
   },
 })

@@ -1,4 +1,5 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import * as WebBrowser from 'expo-web-browser'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
@@ -11,17 +12,21 @@ export function WebFallbackScreen({ route }: Props) {
 
   return (
     <View style={styles.screen}>
-      <View style={luminaStyles.stage}>
-        <Text style={styles.title}>Continue in browser</Text>
+      <View style={luminaStyles.card}>
+        <View style={styles.medallion}>
+          <Ionicons name="open-outline" size={24} color={lumina.primary} />
+        </View>
+        <Text style={styles.title}>Finish in your browser</Text>
         <Text style={styles.body}>
           This link requires browser completion to avoid an app-link loop and keep your account flow safe.
         </Text>
         <Pressable
-          style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
+          style={({ pressed }) => [luminaStyles.primaryButton, styles.button, pressed && luminaStyles.pressedButton]}
           onPress={() => {
             void WebBrowser.openBrowserAsync(url)
           }}
         >
+          <Ionicons name="open-outline" size={18} color={lumina.onPrimary} />
           <Text style={luminaStyles.primaryButtonText}>Continue in browser</Text>
         </Pressable>
       </View>
@@ -35,6 +40,14 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'center',
   },
+  medallion: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: lumina.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     color: lumina.onSurface,
     fontSize: 26,
@@ -45,5 +58,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontFamily: luminaFonts.body,
+  },
+  button: {
+    flexDirection: 'row',
+    gap: 8,
   },
 })
