@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, Pressable, StyleSheet, AppState, ActivityIndicator } from 'react-native'
+import { View, Text, Pressable, StyleSheet, AppState, ActivityIndicator, Animated } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import InCallManager from 'react-native-incall-manager'
 import type { MediaStream } from 'react-native-webrtc'
@@ -21,6 +22,10 @@ import type { BaselineContext } from '@/types/baseline'
 import { ApiError } from '@/lib/apiClient'
 import { shouldSkipMedicalHistory } from '@/lib/screening/shouldSkipMedicalHistory'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
+import { MobileScribeVoiceBars } from '@/screens/clinician/components/scribe/MobileScribeVoiceBars'
+
+const LIVE_BARS = [14, 28, 18, 34, 22, 30, 16] as const
+const LIVE_BARS_ACTIVE = [22, 16, 30, 18, 34, 14, 28] as const
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'Intake'>
 
@@ -334,6 +339,22 @@ export function IntakeScreen({ route, navigation }: Props) {
     return 'Discuss your current symptoms, then continue to review and confirmation.'
   }, [currentPhase])
 
+  const micPulse = useRef(new Animated.Value(0.4)).current
+  useEffect(() => {
+    if (viewState !== 'live') return
+    micPulse.setValue(0.4)
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(micPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(micPulse, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    )
+    loop.start()
+    return () => {
+      loop.stop()
+    }
+  }, [micPulse, viewState])
+
   return (
     <View style={styles.screen}>
       <View style={luminaStyles.stage}>
@@ -345,7 +366,7 @@ export function IntakeScreen({ route, navigation }: Props) {
           <PhaseChip label="Symptoms" active={currentPhase === 'symptoms'} complete={false} />
         </View>
 
-        <View style={styles.card}>
+        <View style={luminaStyles.inset}>
           <Text style={styles.cardTitle}>
             {viewState === 'setup'
               ? 'Preparing live connection'
@@ -355,6 +376,20 @@ export function IntakeScreen({ route, navigation }: Props) {
                   ? 'Analyzing and saving'
                   : 'Action required'}
           </Text>
+          {viewState === 'live' ? (
+            <View style={styles.liveIndicatorRow}>
+              <Animated.View
+                style={[styles.micDot, { opacity: micPulse }]}
+                accessibilityElementsHidden
+              />
+              <MobileScribeVoiceBars
+                heights={LIVE_BARS}
+                activeHeights={LIVE_BARS_ACTIVE}
+                animated
+                barColor={lumina.primary}
+              />
+            </View>
+          ) : null}
           <Text style={styles.cardBody}>{phaseLabel}</Text>
           <Text style={styles.cardBody}>{guidance}</Text>
           {error ? <Text style={luminaStyles.errorText}>{error}</Text> : null}
@@ -365,13 +400,13 @@ export function IntakeScreen({ route, navigation }: Props) {
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,
-            finishing ? styles.disabled : undefined,
+            finishing && luminaStyles.buttonDisabledTonal,
           ]}
           onPress={() => void handleContinue()}
           disabled={finishing}
         >
           {finishing ? (
-            <ActivityIndicator color={lumina.onPrimary} />
+            <ActivityIndicator color={lumina.onSurfaceVariant} />
           ) : (
             <Text style={luminaStyles.primaryButtonText}>
               {currentPhase === 'medical-history' ? 'Submit history' : 'Finish screening'}
@@ -385,8 +420,25 @@ export function IntakeScreen({ route, navigation }: Props) {
 
 function PhaseChip({ label, active, complete }: { label: string; active: boolean; complete: boolean }) {
   return (
-    <View style={[styles.phaseChip, active ? styles.phaseChipActive : undefined, complete ? styles.phaseChipComplete : undefined]}>
-      <Text style={[styles.phaseLabel, active || complete ? styles.phaseLabelActive : undefined]}>{label}</Text>
+    <View
+      style={[
+        styles.phaseChip,
+        complete ? styles.phaseChipComplete : active ? styles.phaseChipActive : styles.phaseChipUpcoming,
+      ]}
+    >
+      {complete ? (
+        <Ionicons name="checkmark" size={14} color={lumina.onPrimary} style={styles.phaseChipIcon} />
+      ) : active ? (
+        <View style={styles.phaseChipPulse} />
+      ) : null}
+      <Text
+        style={[
+          styles.phaseLabel,
+          complete ? styles.phaseLabelComplete : active ? styles.phaseLabelActive : undefined,
+        ]}
+      >
+        {label}
+      </Text>
     </View>
   )
 }
@@ -414,16 +466,33 @@ const styles = StyleSheet.create({
   },
   phaseChip: {
     flex: 1,
+    flexDirection: 'row',
     borderRadius: 999,
-    backgroundColor: lumina.surfaceContainer,
+    backgroundColor: lumina.surfaceDim,
     paddingVertical: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  phaseChipUpcoming: {
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
   },
   phaseChipActive: {
     backgroundColor: lumina.primaryContainer,
   },
   phaseChipComplete: {
-    backgroundColor: lumina.primaryContainer,
+    backgroundColor: lumina.primary,
+  },
+  phaseChipIcon: {
+    marginRight: -2,
+  },
+  phaseChipPulse: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: lumina.primaryFixed,
   },
   phaseLabel: {
     color: lumina.onSurfaceVariant,
@@ -433,11 +502,19 @@ const styles = StyleSheet.create({
   phaseLabelActive: {
     color: lumina.primary,
   },
-  card: {
-    borderRadius: 24,
-    backgroundColor: lumina.surfaceLowest,
-    padding: 14,
-    gap: 8,
+  phaseLabelComplete: {
+    color: lumina.onPrimary,
+  },
+  liveIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  micDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: lumina.primaryFixed,
   },
   cardTitle: {
     color: lumina.onSurface,
@@ -449,8 +526,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontFamily: luminaFonts.body,
-  },
-  disabled: {
-    opacity: 0.6,
   },
 })

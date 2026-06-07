@@ -12,13 +12,13 @@ const variantMap: Record<
   development: {
     bundleId: 'com.bubbl.mobile.dev',
     packageName: 'com.bubbl.mobile.dev',
-    scheme: 'bubbl-dev',
+    scheme: 'bubbl-local',
     hosts: ['dev.bubblhealth.ai'],
   },
   preview: {
     bundleId: 'com.bubbl.mobile.preview',
     packageName: 'com.bubbl.mobile.preview',
-    scheme: 'bubbl-preview',
+    scheme: 'bubbl-dev',
     hosts: ['dev.bubblhealth.ai'],
   },
   production: {

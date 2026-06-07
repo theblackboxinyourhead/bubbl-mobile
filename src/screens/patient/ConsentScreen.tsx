@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { PatientStackParamList } from '@/navigation/RootNavigator'
 import { fetchConsent, postConsent } from '@/api/patients'
 import { ApiError } from '@/lib/apiClient'
 import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
+import { LoadingState } from '@/screens/shared/ScreenState'
 
 type Props = NativeStackScreenProps<PatientStackParamList, 'Consent'>
 
@@ -65,7 +67,7 @@ export function ConsentScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator color={lumina.primary} />
+        <LoadingState label="Loading consent..." />
       </View>
     )
   }
@@ -73,20 +75,30 @@ export function ConsentScreen({ navigation, route }: Props) {
   return (
     <ScrollView style={luminaStyles.screen} contentContainerStyle={styles.wrap}>
       <View style={luminaStyles.stage}>
+        <View style={styles.eyebrowRow}>
+          <Ionicons name="shield-checkmark" size={14} color={lumina.primary} />
+          <Text style={luminaStyles.eyebrow}>Privacy & consent</Text>
+        </View>
         <Text style={styles.title}>Before we continue</Text>
-        <Text style={styles.body}>
-          Bubbl securely collects your pre-visit health information so your clinician can prepare.
-        </Text>
-        <Text style={styles.body}>
-          Find a quiet space and keep your phone nearby. You can review everything before completion.
-        </Text>
+        <View style={luminaStyles.card}>
+          <Text style={styles.body}>
+            Bubbl securely collects your pre-visit health information so your clinician can prepare.
+          </Text>
+          <Text style={styles.body}>
+            Find a quiet space and keep your phone nearby. You can review everything before completion.
+          </Text>
+        </View>
+
+        <View style={luminaStyles.dividerHairline} />
 
         <Pressable
           testID="patient-consent-accept-toggle"
           style={({ pressed }) => [styles.acceptRow, pressed && luminaStyles.pressedRow]}
           onPress={() => setAccepted((prev) => !prev)}
         >
-          <View style={[styles.checkbox, accepted ? styles.checkboxOn : undefined]} />
+          <View style={[styles.checkbox, accepted ? styles.checkboxOn : undefined]}>
+            {accepted ? <Ionicons name="checkmark" size={15} color={lumina.primary} /> : null}
+          </View>
           <Text style={styles.acceptText}>I accept the consent terms and privacy explanation.</Text>
         </Pressable>
 
@@ -96,7 +108,7 @@ export function ConsentScreen({ navigation, route }: Props) {
           style={({ pressed }) => [
             luminaStyles.primaryButton,
             pressed && luminaStyles.pressedButton,
-            (submitting || !accepted) && luminaStyles.primaryButtonDisabled,
+            (submitting || !accepted) && luminaStyles.buttonDisabledTonal,
           ]}
           onPress={() => void accept()}
           disabled={submitting || !accepted}
@@ -104,7 +116,14 @@ export function ConsentScreen({ navigation, route }: Props) {
           {submitting ? (
             <ActivityIndicator color={lumina.onPrimary} />
           ) : (
-            <Text style={luminaStyles.primaryButtonText}>Continue</Text>
+            <Text
+              style={[
+                luminaStyles.primaryButtonText,
+                (submitting || !accepted) && luminaStyles.buttonDisabledTonalText,
+              ]}
+            >
+              Continue
+            </Text>
           )}
         </Pressable>
       </View>
@@ -135,6 +154,11 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontFamily: luminaFonts.body,
   },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   acceptRow: {
     marginTop: 4,
     flexDirection: 'row',
@@ -142,17 +166,22 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   checkbox: {
-    width: 18,
-    height: 18,
+    width: 22,
+    height: 22,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     backgroundColor: lumina.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   checkboxOn: {
-    backgroundColor: lumina.primary,
+    borderColor: lumina.primary,
+    backgroundColor: lumina.secondaryContainer,
   },
   acceptText: {
     flex: 1,
-    color: lumina.onSurfaceVariant,
+    color: lumina.onSurface,
     fontSize: 14,
     fontFamily: luminaFonts.body,
   },

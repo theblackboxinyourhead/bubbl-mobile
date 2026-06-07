@@ -77,8 +77,8 @@ export const lumina = {
   statusDotInProgress: '#2563EB',
   statusDotError: '#DC2626',
   statusDotCancelled: '#9CA3AF',
-  statusDotReady: '#006B66',
-  statusDotNeutral: '#006B66',
+  statusDotReady: '#73f1e7',
+  statusDotNeutral: '#9CA3AF',
 }
 
 export const luminaStyles = StyleSheet.create({
@@ -105,6 +105,8 @@ export const luminaStyles = StyleSheet.create({
   sectionFlat: {
     borderRadius: cardRadius,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     padding: 14,
     gap: 12,
     ...ambientShadowSoft,
@@ -117,6 +119,8 @@ export const luminaStyles = StyleSheet.create({
   listRowCompact: {
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     paddingVertical: 12,
     paddingHorizontal: 14,
     gap: 4,
@@ -225,23 +229,120 @@ export const luminaStyles = StyleSheet.create({
   stage: {
     borderRadius: stageRadius,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     padding: 20,
     gap: 14,
     overflow: 'hidden',
-    ...ambientShadow,
+    ...ambientShadowSoft,
   },
   card: {
     borderRadius: cardRadius,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    padding: 18,
+    gap: 12,
+    overflow: 'hidden',
+    ...ambientShadowSoft,
+  },
+  /** Tier-2 hero card: stronger ambient shadow + hairline. */
+  heroCard: {
+    borderRadius: cardRadius,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     padding: 18,
     gap: 12,
     overflow: 'hidden',
     ...ambientShadow,
   },
+  /** Tier-2 with a 3px primary left accent rail for the single highest-priority card. */
+  accentCard: {
+    borderRadius: cardRadius,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    borderLeftWidth: 3,
+    borderLeftColor: lumina.primary,
+    padding: 18,
+    gap: 12,
+    overflow: 'hidden',
+    ...ambientShadow,
+  },
+  /** Tier-2 depth-wash surface (solid faint-mint tint of #EAF4F3). LinearGradient layers on top per §2.5. */
+  heroWashCard: {
+    borderRadius: cardRadius,
+    backgroundColor: '#F3FBFA',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    padding: 18,
+    gap: 12,
+    overflow: 'hidden',
+    ...ambientShadow,
+  },
+  /** Tier-(-1) inset well — only inside a Tier-1 card. */
+  inset: {
+    borderRadius: 14,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    padding: 12,
+    gap: 8,
+  },
+  /** Hairline row/section divider. */
+  dividerHairline: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: lumina.outlineVariant,
+  },
+  /** 3px left accent rail; override borderLeftColor per semantic tone. */
+  accentRail: {
+    borderLeftWidth: 3,
+    borderLeftColor: lumina.primary,
+  },
+  /** Bright "new/live/selected" indicator badge using primaryFixed. */
+  newBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: lumina.primaryFixed,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  newBadgeText: {
+    color: lumina.onPrimaryContainer,
+    fontSize: 11,
+    fontFamily: luminaFonts.bodySemi,
+    letterSpacing: 0.2,
+  },
   title: {
     color: lumina.onSurface,
     fontSize: 32,
     fontFamily: luminaFonts.display,
+  },
+  /** Patient intake stack title (26). Do not repurpose `title` (32). */
+  stageTitle: {
+    color: lumina.onSurface,
+    fontSize: 26,
+    fontFamily: luminaFonts.display,
+  },
+  /** In-body Large Title for tab screens (28 / -0.6 tracking). */
+  largeTitle: {
+    color: lumina.onSurface,
+    fontSize: 28,
+    fontFamily: luminaFonts.display,
+    letterSpacing: -0.6,
+  },
+  /** Uppercase overline/kicker. */
+  eyebrow: {
+    color: lumina.onSurfaceVariant,
+    fontSize: 11,
+    fontFamily: luminaFonts.bodySemi,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  /** Apply alongside numeric Text styles for aligned digits. */
+  tabularNums: {
+    fontVariant: ['tabular-nums'],
   },
   subtitle: {
     color: lumina.onSurfaceVariant,
@@ -257,6 +358,8 @@ export const luminaStyles = StyleSheet.create({
   input: {
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     paddingHorizontal: 14,
     paddingVertical: 12,
     color: lumina.onSurface,
@@ -297,6 +400,15 @@ export const luminaStyles = StyleSheet.create({
   primaryButtonDisabled: {
     opacity: 0.6,
   },
+  /** Tonal disabled state (mint fill + muted text) — preferred over opacity:0.6 for locked CTAs. */
+  buttonDisabledTonal: {
+    backgroundColor: lumina.secondaryContainer,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  buttonDisabledTonalText: {
+    color: lumina.onSurfaceVariant,
+  },
   primaryButtonText: {
     color: lumina.onPrimary,
     fontSize: 16,
@@ -325,6 +437,36 @@ export const luminaStyles = StyleSheet.create({
   },
   ghostButtonText: {
     color: lumina.primary,
+    fontSize: 15,
+    fontFamily: luminaFonts.bodySemi,
+  },
+  /** Outlined secondary CTA (1.5px primary border, transparent fill). */
+  primaryOutlineButton: {
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: lumina.primary,
+    backgroundColor: 'transparent',
+    paddingVertical: 12.5,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryOutlineButtonText: {
+    color: lumina.primary,
+    fontSize: 16,
+    fontFamily: luminaFonts.bodySemi,
+  },
+  /** Low-frequency destructive exit (Sign out): ghost geometry + semantic red label. */
+  destructiveGhostButton: {
+    borderRadius: 999,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  destructiveGhostButtonText: {
+    color: '#991B1B',
     fontSize: 15,
     fontFamily: luminaFonts.bodySemi,
   },

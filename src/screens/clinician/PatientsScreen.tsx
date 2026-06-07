@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View, type ListRenderItem } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { ClinicianTabScreenProps } from '@/navigation/RootNavigator'
 import { listClinicianPatients, type ClinicianPatientRosterItem } from '@/api/clinicians'
 import { sendScreeningInvite } from '@/api/screenings'
 import { formatListTimestamp } from '@/lib/datetime'
 import { EmptyState, ErrorState, LoadingState } from '@/screens/shared/ScreenState'
 import { SegmentedControl, type SegmentedControlTab } from '@/screens/shared/SegmentedControl'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { SummaryBadge, type SummaryBadgeTone } from '@/screens/clinician/components/summary/SummaryBadge'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 type Props = ClinicianTabScreenProps<'Patients'>
 
@@ -20,10 +22,32 @@ const SORT_TABS: readonly SegmentedControlTab<SortMode>[] = [
 
 const PAGE_SIZE = 30
 
-function rosterScreeningTone(screeningStatus: string): 'attention' | null {
+type RosterStatus = {
+  label: string
+  tone: SummaryBadgeTone
+  rail: string
+}
+
+function resolveRosterStatus(
+  screeningStatus: string,
+  lastScreeningRequest: string | null
+): RosterStatus {
   const s = screeningStatus.trim().toLowerCase()
-  if (s.includes('not sent') || s.includes('not_sent') || s.includes('uninvited')) return 'attention'
-  return null
+  if (s.includes('complete')) return { label: 'Completed', tone: 'badge-teal', rail: lumina.statusDotReady }
+  if (s.includes('in progress') || s.includes('in review') || s.includes('active')) {
+    return { label: 'Active', tone: 'medical-condition', rail: lumina.statusDotInProgress }
+  }
+  if (s === 'sent' || s.includes('invited') || lastScreeningRequest) {
+    return { label: 'Invited', tone: 'badge-yellow', rail: lumina.statusDotAttention }
+  }
+  return { label: 'Never invited', tone: 'badge-secondary', rail: lumina.statusDotNeutral }
+}
+
+function rosterInitials(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
 }
 
 export function PatientsScreen({ navigation }: Props) {
@@ -148,17 +172,20 @@ export function PatientsScreen({ navigation }: Props) {
 
   const headerNode = useMemo(
     () => (
-      <>
-        <TextInput
-          testID="clinician-patients-search-input"
-          style={[luminaStyles.input, searchFocused && luminaStyles.inputFocused]}
-          value={search}
-          onChangeText={setSearch}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          placeholder="Search by name, email, or phone"
-          placeholderTextColor={lumina.onSurfaceVariant}
-        />
+      <View style={styles.listHeader}>
+        <View style={[styles.searchField, searchFocused && luminaStyles.inputFocused]}>
+          <Ionicons name="search" size={18} color={lumina.onSurfaceVariant} style={styles.searchIcon} />
+          <TextInput
+            testID="clinician-patients-search-input"
+            style={styles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            placeholder="Search by name, email, or phone"
+            placeholderTextColor={lumina.outline}
+          />
+        </View>
 
         <SegmentedControl
           tabs={SORT_TABS}
@@ -171,40 +198,45 @@ export function PatientsScreen({ navigation }: Props) {
         {loading ? <LoadingState label="Loading patient roster..." /> : null}
         {error ? <ErrorState body={error} onRetry={() => void loadReset()} /> : null}
         {actionMessage ? <Text style={styles.message}>{actionMessage}</Text> : null}
-      </>
+      </View>
     ),
     [search, searchFocused, sortMode, loading, error, actionMessage, loadReset]
   )
 
   const renderItem = useCallback<ListRenderItem<ClinicianPatientRosterItem>>(
-    ({ item: row }) => {
+    ({ item: row, index }) => {
       const sentLabel = formatListTimestamp(row.lastScreeningRequest)
-      const isNeverSent = rosterScreeningTone(row.screeningStatus) === 'attention' && !sentLabel
-      const showSentMeta = Boolean(sentLabel)
+      const status = resolveRosterStatus(row.screeningStatus, row.lastScreeningRequest)
+      const isFirst = index === 0
+      const isLast = index === rows.length - 1
       return (
-        <View style={styles.rosterRow}>
+        <View
+          style={[
+            styles.rosterRow,
+            isFirst && styles.rosterRowFirst,
+            isLast && styles.rosterRowLast,
+            { borderLeftColor: status.rail },
+          ]}
+        >
           <Pressable
             testID={`clinician-patients-row-${row.id}`}
-            style={({ pressed }) => [
-              styles.rosterMain,
-              !showSentMeta && styles.rosterMainCentered,
-              pressed && luminaStyles.pressedRow,
-            ]}
+            style={({ pressed }) => [styles.rosterMain, pressed && luminaStyles.pressedRow]}
             onPress={() => navigation.navigate('PatientProfile', { patientId: row.id })}
           >
             <View style={styles.rosterMainInner}>
-              <View
-                style={[
-                  luminaStyles.statusDot,
-                  isNeverSent ? luminaStyles.statusDotAttention : styles.statusDotTransparent,
-                ]}
-              />
+              <View style={styles.rosterAvatar}>
+                <Text style={styles.rosterAvatarText}>{rosterInitials(row.fullName)}</Text>
+              </View>
               <View style={styles.rosterTextCol}>
                 <Text style={luminaStyles.rowTitleStrong}>{row.fullName}</Text>
-                {showSentMeta ? (
-                  <Text style={luminaStyles.metaText}>{`Sent ${sentLabel}`}</Text>
-                ) : null}
+                <View style={styles.rosterMetaRow}>
+                  <SummaryBadge tone={status.tone} label={status.label} />
+                  {sentLabel ? (
+                    <Text style={luminaStyles.metaText}>{`Sent ${sentLabel}`}</Text>
+                  ) : null}
+                </View>
               </View>
+              <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
             </View>
           </Pressable>
           <View style={styles.rosterAction}>
@@ -227,13 +259,13 @@ export function PatientsScreen({ navigation }: Props) {
         </View>
       )
     },
-    [busyInviteId, navigation, sendScreening]
+    [busyInviteId, navigation, sendScreening, rows.length]
   )
 
   return (
     <FlatList
       style={luminaStyles.screenTransparent}
-      contentContainerStyle={[luminaStyles.pageContent, styles.rosterList]}
+      contentContainerStyle={styles.rosterList}
       data={rows}
       keyExtractor={(row) => row.id}
       renderItem={renderItem}
@@ -244,6 +276,7 @@ export function PatientsScreen({ navigation }: Props) {
       keyboardShouldPersistTaps="handled"
       onEndReached={() => void loadMore()}
       onEndReachedThreshold={0.4}
+      ItemSeparatorComponent={RosterSeparator}
       ListHeaderComponent={headerNode}
       ListFooterComponent={loadingMore ? <LoadingState label="Loading more patients..." /> : null}
       ListEmptyComponent={
@@ -255,9 +288,36 @@ export function PatientsScreen({ navigation }: Props) {
   )
 }
 
+function RosterSeparator() {
+  return <View style={styles.rosterSeparator} />
+}
+
 const styles = StyleSheet.create({
   rosterList: {
-    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 36,
+  },
+  listHeader: {
+    gap: 16,
+    marginBottom: 16,
+  },
+  searchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    color: lumina.onSurface,
   },
   message: {
     color: lumina.onSurfaceVariant,
@@ -266,26 +326,63 @@ const styles = StyleSheet.create({
   rosterRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    borderRadius: 10,
     backgroundColor: lumina.surfaceLowest,
-    overflow: 'hidden',
     minHeight: 60,
+    borderLeftWidth: 3,
+    borderRightWidth: 1,
+    borderRightColor: lumina.outlineVariant,
+  },
+  rosterRowFirst: {
+    borderTopWidth: 1,
+    borderTopColor: lumina.outlineVariant,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  rosterRowLast: {
+    borderBottomWidth: 1,
+    borderBottomColor: lumina.outlineVariant,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  rosterSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: lumina.outlineVariant,
+    marginLeft: 56,
   },
   rosterMain: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 10,
-  },
-  rosterMainCentered: {
     justifyContent: 'center',
   },
   rosterMainInner: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  rosterAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: '#EAF4F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rosterAvatarText: {
+    color: '#006B66',
+    fontSize: 14,
+    fontFamily: luminaFonts.bodySemi,
   },
   rosterTextCol: {
     flex: 1,
-    gap: 3,
+    minWidth: 0,
+    gap: 4,
+  },
+  rosterMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   rosterAction: {
     justifyContent: 'center',
@@ -296,9 +393,7 @@ const styles = StyleSheet.create({
   },
   rosterActionPill: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  statusDotTransparent: {
-    backgroundColor: 'transparent',
+    paddingVertical: 11,
+    minHeight: 44,
   },
 })

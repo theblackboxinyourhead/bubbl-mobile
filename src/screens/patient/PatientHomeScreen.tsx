@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import type { PatientTabScreenProps } from '@/navigation/RootNavigator'
 import { fetchAuthMe } from '@/api/auth'
@@ -33,6 +34,7 @@ function timestampOf(value: string | null | undefined): number {
 }
 
 export function PatientHomeScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<HomeData | null>(null)
@@ -132,7 +134,7 @@ export function PatientHomeScreen({ navigation }: Props) {
   }, [refresh])
 
   return (
-    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={luminaStyles.pageContent}>
+    <ScrollView style={luminaStyles.screenTransparent} contentContainerStyle={[luminaStyles.pageContent, { paddingTop: insets.top + 14 }]}>
       {loading ? <LoadingState label="Loading home..." /> : null}
       {error && !data ? <ErrorState body={error} onRetry={() => void refresh()} /> : null}
       {error && data ? (
@@ -145,77 +147,90 @@ export function PatientHomeScreen({ navigation }: Props) {
 
       {data ? (
         <>
+          <Text style={luminaStyles.largeTitle}>Home</Text>
           {data.activeCheckins.length > 0 ? (
-            <View style={luminaStyles.sectionFlat}>
+            <View
+              style={
+                data.activeCheckins.some((item) => item.status === 'sent')
+                  ? luminaStyles.accentCard
+                  : luminaStyles.card
+              }
+            >
+              <Text style={luminaStyles.eyebrow}>Active</Text>
               <Text style={luminaStyles.sectionHeader}>Active check-ins</Text>
-              {data.activeCheckins.map((item) => {
-                const title =
-                  item.source === 'self'
-                    ? 'Self check-in'
-                    : item.clinicName && item.clinicName.trim().length > 0
-                      ? item.clinicName
-                      : 'Check-in request'
-                const isSent = item.status === 'sent'
-                const label = isSent ? 'New' : 'Started'
-                const action = isSent ? 'Start' : 'Resume'
-                const dotStyle = isSent
-                  ? luminaStyles.statusDotAttention
-                  : luminaStyles.statusDotNeutral
-                const subtitleSource = isSent
-                  ? item.sentAt ?? item.createdAt
-                  : item.startedAt ?? item.sentAt ?? item.createdAt
-                const subtitle = `${isSent ? 'Sent' : 'Started'} ${formatDateLabel(subtitleSource)}`
-                return (
-                  <Pressable
-                    key={item.screeningId}
-                    testID={`patient-home-active-checkin-${item.screeningId}`}
-                    style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
-                    onPress={() =>
-                      navigation.navigate('Intake', {
-                        screeningId: item.screeningId,
-                        source: item.source,
-                      })
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={`${action} ${title}`}
-                  >
-                    <View style={styles.recentRowInner}>
-                      <View style={[luminaStyles.statusDot, dotStyle]} />
-                      <View style={styles.recentRowTextCol}>
-                        <Text style={luminaStyles.rowTitleStrong}>{title}</Text>
-                        <Text style={luminaStyles.metaText}>
-                          {label} · {subtitle}
-                        </Text>
-                      </View>
-                      <View style={styles.actionCell}>
-                        <Text style={luminaStyles.actionTintedButtonText}>{action}</Text>
-                        <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
-                      </View>
+              <View style={styles.groupedList}>
+                {data.activeCheckins.map((item, index) => {
+                  const title =
+                    item.source === 'self'
+                      ? 'Self check-in'
+                      : item.clinicName && item.clinicName.trim().length > 0
+                        ? item.clinicName
+                        : 'Check-in request'
+                  const isSent = item.status === 'sent'
+                  const label = isSent ? 'New' : 'Started'
+                  const action = isSent ? 'Start' : 'Resume'
+                  const dotStyle = isSent
+                    ? luminaStyles.statusDotAttention
+                    : luminaStyles.statusDotNeutral
+                  const subtitleSource = isSent
+                    ? item.sentAt ?? item.createdAt
+                    : item.startedAt ?? item.sentAt ?? item.createdAt
+                  const subtitle = `${isSent ? 'Sent' : 'Started'} ${formatDateLabel(subtitleSource)}`
+                  return (
+                    <View key={item.screeningId}>
+                      {index > 0 ? <View style={luminaStyles.dividerHairline} /> : null}
+                      <Pressable
+                        testID={`patient-home-active-checkin-${item.screeningId}`}
+                        style={({ pressed }) => [styles.groupedRow, pressed && luminaStyles.pressedRow]}
+                        onPress={() =>
+                          navigation.navigate('Intake', {
+                            screeningId: item.screeningId,
+                            source: item.source,
+                          })
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={`${action} ${title}`}
+                      >
+                        <View style={styles.accessorySlot}>
+                          <View style={[luminaStyles.statusDot, dotStyle]} />
+                        </View>
+                        <View style={styles.recentRowTextCol}>
+                          <Text style={luminaStyles.rowTitleStrong}>{title}</Text>
+                          <Text style={luminaStyles.metaText}>
+                            {label} · {subtitle}
+                          </Text>
+                        </View>
+                        <View style={styles.actionCell}>
+                          <Text style={luminaStyles.actionTintedButtonText}>{action}</Text>
+                        </View>
+                      </Pressable>
                     </View>
-                  </Pressable>
-                )
-              })}
+                  )
+                })}
+              </View>
             </View>
           ) : null}
 
-          <View style={luminaStyles.sectionFlat}>
+          <View style={luminaStyles.card}>
+            <Text style={luminaStyles.eyebrow}>Self check-in</Text>
             <Text style={luminaStyles.sectionHeader}>Self check-in</Text>
             <Pressable
-              style={({ pressed }) => [luminaStyles.secondaryButton, pressed && luminaStyles.pressedButton]}
+              style={({ pressed }) => [luminaStyles.primaryButton, pressed && luminaStyles.pressedButton]}
               onPress={() => navigation.navigate('CheckInStart')}
               accessibilityRole="button"
               accessibilityLabel="Start a self check-in"
             >
-              <Text style={luminaStyles.secondaryButtonText}>Start self check-in</Text>
+              <Text style={luminaStyles.primaryButtonText}>Start self check-in</Text>
             </Pressable>
           </View>
 
-          <View style={luminaStyles.sectionFlat}>
+          <View style={luminaStyles.card}>
+            <Text style={luminaStyles.eyebrow}>Latest result</Text>
             <Text style={luminaStyles.sectionHeader}>Latest result</Text>
             {data.latestCompletedScreeningId ? (
               <Pressable
                 testID="patient-home-latest-result-row"
-                style={({ pressed }) => [luminaStyles.listRowCompact, pressed && luminaStyles.pressedRow]}
+                style={({ pressed }) => [styles.groupedRow, pressed && luminaStyles.pressedRow]}
                 onPress={() => {
                   const id = data.latestCompletedScreeningId
                   if (!id) return
@@ -224,18 +239,21 @@ export function PatientHomeScreen({ navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Open latest completed screening"
               >
-                <View style={styles.recentRowInner}>
-                  <View style={styles.recentRowTextCol}>
-                    <Text style={luminaStyles.rowTitleStrong}>Latest completed</Text>
-                    <Text style={luminaStyles.metaText}>{data.latestCompletedDateLabel ?? 'Recent'}</Text>
-                  </View>
-                  <View style={styles.chevronCell}>
-                    <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
-                  </View>
+                <View style={styles.accessorySlot}>
+                  <View style={[luminaStyles.statusDot, luminaStyles.statusDotReady]} />
+                </View>
+                <View style={styles.recentRowTextCol}>
+                  <Text style={luminaStyles.rowTitleStrong}>Latest completed</Text>
+                  <Text style={luminaStyles.metaText}>Ready · {data.latestCompletedDateLabel ?? 'Recent'}</Text>
+                </View>
+                <View style={styles.chevronCell}>
+                  <Ionicons name="chevron-forward" size={18} color={lumina.onSurfaceVariant} />
                 </View>
               </Pressable>
             ) : (
-              <EmptyState title="No completed screenings yet" body="Your completed check-ins will show up here." />
+              <Text style={luminaStyles.metaText}>
+                No completed screenings yet. Your completed check-ins will show up here.
+              </Text>
             )}
           </View>
         </>
@@ -245,9 +263,20 @@ export function PatientHomeScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  recentRowInner: {
+  groupedList: {
+    marginTop: 2,
+  },
+  groupedRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    minHeight: 56,
+    paddingVertical: 14,
+  },
+  accessorySlot: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
   recentRowTextCol: {
     flex: 1,
@@ -260,6 +289,8 @@ const styles = StyleSheet.create({
   actionCell: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    minHeight: 44,
+    alignSelf: 'center',
   },
 })

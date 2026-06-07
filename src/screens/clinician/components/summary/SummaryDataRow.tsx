@@ -58,10 +58,11 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: 8,
   },
+  /** Unified label spec (stacked + inline): 12 / bodyMedium / +0.6 / uppercase / onSurfaceVariant. */
   label: {
     color: lumina.onSurfaceVariant,
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontFamily: luminaFonts.bodyMedium,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
@@ -70,11 +71,14 @@ const styles = StyleSheet.create({
     color: lumina.onSurfaceVariant,
     fontSize: 12,
     fontFamily: luminaFonts.bodyMedium,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   value: {
     color: lumina.onSurface,
     fontSize: 15,
     lineHeight: 20,
+    fontVariant: ['tabular-nums'],
   },
   inlineValue: {
     flexShrink: 1,
@@ -82,6 +86,7 @@ const styles = StyleSheet.create({
     color: lumina.onSurface,
     fontSize: 15,
     fontFamily: luminaFonts.bodySemi,
+    fontVariant: ['tabular-nums'],
   },
   inlineValueNode: {
     flexShrink: 1,

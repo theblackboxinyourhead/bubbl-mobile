@@ -60,27 +60,44 @@ function formatEntry(key: ArrayKey, entry: Record<string, unknown>): string | nu
 export function buildMedicalHistoryLines(
   medicalHistory: Record<string, unknown> | null | undefined
 ): MedicalHistoryLine[] {
-  if (!medicalHistory || typeof medicalHistory !== 'object') return []
+  return buildMedicalHistorySummary(medicalHistory).lines
+}
+
+export type MedicalHistorySummary = {
+  lines: MedicalHistoryLine[]
+  /** Count of readable entries beyond the 6 shown, keyed by category. */
+  remainingByCategory: Partial<Record<ArrayKey, number>>
+}
+
+export function buildMedicalHistorySummary(
+  medicalHistory: Record<string, unknown> | null | undefined
+): MedicalHistorySummary {
+  if (!medicalHistory || typeof medicalHistory !== 'object') return { lines: [], remainingByCategory: {} }
   const arrayKeys: readonly ArrayKey[] = ['conditions', 'medications', 'allergies', 'surgeries', 'familyHistory']
   const lines: string[] = []
+  const remainingByCategory: Partial<Record<ArrayKey, number>> = {}
   let anyReadable = false
   for (const key of arrayKeys) {
     const items = medicalHistory[key]
     if (!Array.isArray(items) || items.length === 0) continue
     const readable: string[] = []
+    let totalReadable = 0
     for (const item of items) {
       if (!item || typeof item !== 'object') continue
       const text = formatEntry(key, item as Record<string, unknown>)
-      if (text) readable.push(text)
-      if (readable.length >= 6) break
+      if (text) {
+        totalReadable += 1
+        if (readable.length < 6) readable.push(text)
+      }
     }
     if (readable.length > 0) {
       anyReadable = true
       readable.forEach((line) => lines.push(line))
+      if (totalReadable > 6) remainingByCategory[key] = totalReadable - 6
     } else {
       lines.push(`No ${FRIENDLY_LABEL[key]} recorded.`)
     }
   }
-  if (!anyReadable) return []
-  return lines
+  if (!anyReadable) return { lines: [], remainingByCategory: {} }
+  return { lines, remainingByCategory }
 }

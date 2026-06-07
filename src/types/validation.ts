@@ -107,6 +107,16 @@ const SymptomEntrySchema = z
 export const PatientScreeningDetailSchema = z.object({
   id: z.string().optional(),
   status: z.string().nullable().optional(),
+  clinician: z
+    .object({
+      firstName: z.string().nullable().optional(),
+      lastName: z.string().nullable().optional(),
+      name: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  screeningType: z.enum(['web', 'phone']).nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   resumeState: ResumeStateSchema.optional(),
   medicalHistory: MedicalHistorySchema.nullable().optional(),
   symptoms: z.array(SymptomEntrySchema).nullable().optional(),

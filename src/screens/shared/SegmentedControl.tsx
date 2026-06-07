@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { lumina, luminaStyles } from '@/screens/shared/lumina'
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { lumina, luminaFonts, luminaStyles } from '@/screens/shared/lumina'
 
 export type SegmentedControlTab<T extends string> = {
   key: T
@@ -71,7 +71,9 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    backgroundColor: lumina.surfaceContainer,
+    backgroundColor: lumina.surfaceDim,
+    borderWidth: 1,
+    borderColor: lumina.outlineVariant,
     borderRadius: 999,
     padding: 4,
     gap: 4,
@@ -93,6 +95,16 @@ const styles = StyleSheet.create({
   },
   segmentActive: {
     backgroundColor: lumina.primary,
+    ...Platform.select({
+      ios: {
+        shadowColor: lumina.primaryFixed,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 6,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
   },
   segmentDisabled: {
     opacity: 0.5,
@@ -100,7 +112,7 @@ const styles = StyleSheet.create({
   label: {
     color: lumina.onSurfaceVariant,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: luminaFonts.bodySemi,
   },
   labelCompact: {
     fontSize: 13,
